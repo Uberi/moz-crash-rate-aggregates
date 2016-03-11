@@ -3,8 +3,6 @@ from datetime import datetime
 import psycopg2
 import numpy as np
 
-import sys, os
-sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), "telemetry"))
 from moztelemetry.spark import get_pings, get_pings_properties
 from pyspark import SparkContext
 
@@ -15,9 +13,11 @@ COMPARABLE_DIMENSIONS = [
     "environment/build/version",
     "environment/build/buildId",
     "application/channel",
+    "application/name",
     "environment/system/os/name",
     "environment/system/os/version",
-    "environment/settings/locale",
+    "environment/build/architecture",
+    "meta/geoCountry",
     "environment/addons/activeExperiment/id",
     "environment/addons/activeExperiment/branch",
     "environment/settings/e10sEnabled",
@@ -26,13 +26,16 @@ DIMENSION_NAMES = [
     "build_version",
     "build_id",
     "channel",
+    "application",
     "os_name",
     "os_version",
-    "locale",
+    "architecture",
+    "country",
     "experiment_id",
     "experiment_branch",
     "e10s_enabled",
 ]
+assert len(COMPARABLE_DIMENSIONS) == len(DIMENSION_NAMES)
 
 def compare_crashes(pings, comparable_dimensions):
     """Returns a PairRDD where keys are user configurations and values are Numpy arrays of the form [usage hours, main process crashes, content process crashes, plugin crashes]"""
@@ -59,16 +62,15 @@ def compare_crashes(pings, comparable_dimensions):
 def retrieve_crash_data(sc, submission_date_range, comparable_dimensions, fraction = 0.1):
     # get the raw data
     normal_pings = get_pings(
-        sc, app="Firefox", channel="nightly",
+        sc,
         submission_date=submission_date_range,
         fraction=fraction
     )
     crash_pings = get_pings(
-        sc, app="Firefox", channel="nightly",
-        doc_type="main",
+        sc, doc_type="main",
         submission_date=submission_date_range,
         fraction=fraction
-    ).filter(lambda p: p["meta"]["reason"] == "aborted-session")
+    ).filter(lambda p: p.get("meta", {}).get("reason") == "aborted-session")
 
     return normal_pings.union(crash_pings)
 
@@ -86,9 +88,11 @@ if __name__ == "__main__":
         build_version varchar,
         build_id varchar,
         channel varchar,
+        application varchar,
         os_name varchar,
         os_version varchar,
-        locale varchar,
+        architecture varchar,
+        country varchar,
         experiment_id varchar,
         experiment_branch varchar,
         e10s_enabled varchar,
