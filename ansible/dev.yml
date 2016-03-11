@@ -1,0 +1,70 @@
+- name: setup local development environment
+  hosts: all
+
+  vars:
+    - spark_version: 1.6.0
+
+  tasks:
+    - name: install packages
+      sudo: yes
+      apt: name={{item}} state=installed update_cache=yes
+      with_items:
+        - libsnappy-dev
+        - liblzma-dev
+        - openjdk-7-jdk
+        - python-numpy
+        - python-pandas # we're installing numpy and pandas using apt because it speeds up the conda install a lot later on
+        - wget
+        - ca-certificates
+
+    - name: get the current release codename for adding apt repositories
+      shell: "lsb_release -cs"
+      register: codename
+
+    # we have to use wget here instead of the built in Ansible get_url module
+    # because Python versions before 2.7.9 don't support SNI, which is needed
+    # to verify the download via HTTPS, while wget does
+    - name: install anaconda
+      command: "{{item}} chdir={{ansible_env.HOME}} creates=miniconda2"
+      with_items:
+        - wget https://repo.continuum.io/miniconda/Miniconda-latest-Linux-x86_64.sh -O miniconda.sh
+        - chmod +x miniconda.sh
+        - ./miniconda.sh -b -f
+
+    - name: source anaconda
+      lineinfile: dest={{ansible_env.HOME}}/.bashrc regexp="^export.*miniconda2/bin" line="export PATH={{ansible_env.HOME}}/miniconda2/bin:$PATH"
+
+    - name: install common python packages
+      command: "{{item}} chdir={{ansible_env.HOME}}"
+      with_items:
+        - miniconda2/bin/conda update --yes conda
+        - miniconda2/bin/conda install --yes atlas numpy scipy matplotlib nose dateutil pandas flask supervisor tornado
+
+    - name: setup Python dependencies
+      pip: name={{item}} state=present executable={{ansible_env.HOME}}/miniconda2/bin/pip
+      with_items:
+        - python_moztelemetry
+        - awscli
+
+    # we have to use wget here instead of the built in Ansible get_url module
+    # because Python versions before 2.7.9 don't support SNI, which is needed
+    # to verify the download via HTTPS, while wget does
+    - name: get spark
+      command: "{{item}} chdir={{ansible_env.HOME}} creates=spark.tgz"
+      with_items:
+        - wget https://d3kbcqa49mib13.cloudfront.net/spark-{{spark_version}}-bin-hadoop2.4.tgz -O spark.tgz
+
+    - name: install spark
+      unarchive: src={{ansible_env.HOME}}/spark.tgz dest={{ansible_env.HOME}} copy=no
+
+    - name: source spark
+      lineinfile: >
+        dest={{ansible_env.HOME}}/.bashrc
+        regexp="^export SPARK_HOME"
+        line="export SPARK_HOME={{ansible_env.HOME}}/spark-{{spark_version}}-bin-hadoop2.4"
+
+    - name: source pyspark
+      lineinfile: >
+        dest={{ansible_env.HOME}}/.bashrc
+        regexp="^export PYTHONPATH"
+        line="export PYTHONPATH=$SPARK_HOME/python:$(ls -1 $SPARK_HOME/python/lib/py4j-*-src.zip | head -1)"
