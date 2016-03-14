@@ -1,7 +1,0 @@
-[program:crash_rate_aggregates_service]
-directory={{ansible_env.HOME}}/miniconda2/lib/python2.7/site-packages/crash_rate_aggregates/
-command={{ansible_env.HOME}}/miniconda2/bin/gunicorn -k gevent --bind 0.0.0.0:5000 service:app
-autostart=true
-autorestart=true
-stderr_logfile=/var/log/crash_rate_aggregates_service.err.log
-stdout_logfile=/var/log/crash_rate_aggregates_service.out.log
