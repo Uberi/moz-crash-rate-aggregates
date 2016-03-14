@@ -88,8 +88,8 @@ if __name__ == "__main__":
 
     today_utc = datetime.utcnow().strftime("%Y%m%d")
     parser = argparse.ArgumentParser(description="Fill an Amazon RDB instance with crash rate aggregates for a certain date range")
-    parser.add_argument("--min-submission-date", help="Earliest date to include in the aggregate calculation (defaults to the current UTC date)", default=today_utc)
-    parser.add_argument("--max-submission-date", help="Latest date to include in the aggregate calculation (defaults to the current UTC date)", default=today_utc)
+    parser.add_argument("--min-submission-date", help="Earliest date to include in the aggregate calculation in YYYYMMDD format (defaults to the current UTC date)", default=today_utc)
+    parser.add_argument("--max-submission-date", help="Latest date to include in the aggregate calculation in YYYYMMDD format (defaults to the current UTC date)", default=today_utc)
     parser.add_argument("--aws-rdb-host", help="Public DNS/address of the Amazon RDB instance", required=True)
     parser.add_argument("--aws-rdb-name", help="Name of the Amazon RDB instance database", required=True)
     parser.add_argument("--aws-rdb-username", help="Username for the Amazon RDB instance", required=True)
