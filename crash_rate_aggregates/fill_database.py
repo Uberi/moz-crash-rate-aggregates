@@ -96,16 +96,18 @@ if __name__ == "__main__":
         experiment_id varchar,
         experiment_branch varchar,
         e10s_enabled varchar,
-        main_crash_rate real,
-        content_crash_rate real,
-        plugin_crash_rate real
+        usage_hours real,
+        main_crashes real,
+        content_crashes real,
+        plugin_crashes real
     );
     """)
 
     # remove previous data for the selected days, if available
+    # this is necessary to be able to backfill data properly
     cur.execute(
         """DELETE FROM aggregates WHERE submission_date >= %s and submission_date <= %s""".format(", ".join(DIMENSION_NAMES)),
-        datetime.strptime(SUBMISSION_DATE_RANGE[0], "%Y%m%d").date(), datetime.strptime(SUBMISSION_DATE_RANGE[1], "%Y%m%d").date()
+        (datetime.strptime(SUBMISSION_DATE_RANGE[0], "%Y%m%d").date(), datetime.strptime(SUBMISSION_DATE_RANGE[1], "%Y%m%d").date())
     )
 
     result = compare_crashes(pings, COMPARABLE_DIMENSIONS)
@@ -114,10 +116,10 @@ if __name__ == "__main__":
         submission_date = datetime.strptime(submission_date, "%Y%m%d")
         usage_hours, main_crashes, content_crashes, plugin_crashes = crash_data
         cur.execute(
-            """INSERT INTO aggregates(submission_date, {}, main_crash_rate, content_crash_rate, plugin_crash_rate) VALUES (%s, {}%s, %s, %s)""".format(
+            """INSERT INTO aggregates(submission_date, {}, usage_hours, main_crashes, content_crashes, plugin_crashes) VALUES (%s, {}%s, %s, %s, %s)""".format(
                 ", ".join(DIMENSION_NAMES), "%s, " * len(DIMENSION_NAMES)
             ),
-            (submission_date,) + dimension_values + (main_crashes / usage_hours, content_crashes / usage_hours, plugin_crashes / usage_hours)
+            (submission_date,) + dimension_values + (usage_hours, main_crashes, content_crashes, plugin_crashes)
         )
 
     conn.commit()

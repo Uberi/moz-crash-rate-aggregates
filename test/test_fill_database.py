@@ -4,6 +4,12 @@ import unittest
 import logging
 import re
 
+import sys, os
+try:
+    sys.path.append(os.path.join(os.environ['SPARK_HOME'], "python"))
+except KeyError:
+    print "SPARK_HOME not set"
+    sys.exit(1)
 import pyspark
 
 import dataset
