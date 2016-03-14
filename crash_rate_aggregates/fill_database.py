@@ -1,12 +1,13 @@
+#!/usr/bin/env python
+
+import sys
 from datetime import datetime
 
 import psycopg2
 import numpy as np
 
 from moztelemetry.spark import get_pings, get_pings_properties
-from pyspark import SparkContext
 
-SUBMISSION_DATE_RANGE = (datetime.utcnow().strftime("%Y%m%d"),) * 2
 FRACTION = 0.1
 
 COMPARABLE_DIMENSIONS = [
@@ -75,10 +76,32 @@ def retrieve_crash_data(sc, submission_date_range, comparable_dimensions, fracti
     return normal_pings.union(crash_pings)
 
 if __name__ == "__main__":
+    import argparse
+
+    import sys, os
+    try:
+        sys.path.append(os.path.join(os.environ['SPARK_HOME'], "python"))
+    except KeyError:
+        print "SPARK_HOME not set"
+        sys.exit(1)
+    from pyspark import SparkContext
+
+    today_utc = datetime.utcnow().strftime("%Y%m%d")
+    parser = argparse.ArgumentParser(description="Fill an Amazon RDB instance with crash rate aggregates for a certain date range")
+    parser.add_argument("--min-submission-date", help="Earliest date to include in the aggregate calculation (defaults to the current UTC date)", default=today_utc)
+    parser.add_argument("--max-submission-date", help="Latest date to include in the aggregate calculation (defaults to the current UTC date)", default=today_utc)
+    parser.add_argument("--aws-rdb-host", help="Public DNS/address of the Amazon RDB instance", required=True)
+    parser.add_argument("--aws-rdb-name", help="Name of the Amazon RDB instance database", required=True)
+    parser.add_argument("--aws-rdb-username", help="Username for the Amazon RDB instance", required=True)
+    parser.add_argument("--aws-rdb-password", help="Password for the Amazon RDB instance", required=True)
+    args = parser.parse_args()
+    SUBMISSION_DATE_RANGE = (args.min_submission_date, args.max_submission_date)
+    DB_HOST, DB_NAME, DB_USER, DB_PASS = args.aws_rdb_host, args.aws_rdb_name, args.aws_rdb_username, args.aws_rdb_password
+
     sc = SparkContext()
     pings = retrieve_crash_data(sc, SUBMISSION_DATE_RANGE, COMPARABLE_DIMENSIONS, FRACTION)
 
-    conn = psycopg2.connect(database="aggregates", user="postgres")
+    conn = psycopg2.connect(host=DB_HOST, database=DB_NAME, user=DB_USER, password=DB_PASS)
     cur = conn.cursor()
 
     cur.execute("""
