@@ -25,6 +25,12 @@ To run the tests, execute `python -m unittest discover` in the project directory
 
 To add a new dimension to compare on, add matching entries to `COMPARABLE_DIMENSIONS` and `DIMENSION_NAMES` in `crash_rate_aggregates/fill_database.py`.
 
+When running in the Telemetry Analysis Environment, debugging can be a pain. These commands can be helpful:
+
+* `yum install w3m; w3m http://localhost:4040` to show the Spark UI in the command line.
+* `tail -f /mnt/spark.log` to view the Spark logs.
+* `yum install nethogs; sudo nethogs` to monitor network utilization for each process.
+
 Deployment
 ----------
 
