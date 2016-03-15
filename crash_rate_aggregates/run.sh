@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 # set up environment
-sudo apt-get install libsnappy-dev liblzma-dev
+sudo apt-get install libsnappy-dev liblzma-dev python-psycopg2
 sudo pip2 install telemetry-tools
 sudo pip2 install python_moztelemetry
 
