@@ -95,8 +95,11 @@ def retrieve_crash_data(sc, submission_date_range, comparable_dimensions, fracti
 
     return normal_pings.union(crash_pings)
 
-def run_job(spark_context, start_date, end_date, db_host, db_name, db_user, db_pass):
-    pings = retrieve_crash_data(spark_context, SUBMISSION_DATE_RANGE, COMPARABLE_DIMENSIONS, FRACTION)
+def run_job(spark_context, submission_date_range, db_host, db_name, db_user, db_pass):
+    start_date = datetime.strptime(submission_date_range[0], "%Y%m%d").date()
+    end_date = datetime.strptime(submission_date_range[1], "%Y%m%d").date()
+
+    pings = retrieve_crash_data(spark_context, submission_date_range, COMPARABLE_DIMENSIONS, FRACTION)
 
     # useful statements for testing the program
     #sc = SparkContext(master="local[1]") # run sequentially with only 1 worker
@@ -202,11 +205,8 @@ if __name__ == "__main__":
     parser.add_argument("--pg-password", help="Password for the Postgresql database", required=True)
     args = parser.parse_args()
     args.min_submission_date, args.max_submission_date = "20160301", "20160630"
-    SUBMISSION_DATE_RANGE = (args.min_submission_date, args.max_submission_date)
+    submission_date_range = (args.min_submission_date, args.max_submission_date)
     db_host, db_name, db_user, db_pass = args.pg_host, args.pg_name, args.pg_username, args.pg_password
 
-    start_date = datetime.strptime(SUBMISSION_DATE_RANGE[0], "%Y%m%d").date()
-    end_date = datetime.strptime(SUBMISSION_DATE_RANGE[1], "%Y%m%d").date()
-
     sc = SparkContext()
-    run_job(sc, start_date, end_date, db_host, db_name, db_user, db_pass)
+    run_job(sc, submission_date_range, db_host, db_name, db_user, db_pass)
