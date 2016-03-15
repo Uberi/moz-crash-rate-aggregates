@@ -95,7 +95,7 @@ def retrieve_crash_data(sc, submission_date_range, comparable_dimensions, fracti
 
     return normal_pings.union(crash_pings)
 
-def run_job(spark_context):
+def run_job(spark_context, start_date, end_date, db_host, db_name, db_user, db_pass):
     pings = retrieve_crash_data(spark_context, SUBMISSION_DATE_RANGE, COMPARABLE_DIMENSIONS, FRACTION)
 
     # useful statements for testing the program
@@ -105,7 +105,7 @@ def run_job(spark_context):
     # compare crashes by all of the above dimensions
     result = compare_crashes(pings, COMPARABLE_DIMENSIONS, DIMENSION_NAMES)
 
-    conn = psycopg2.connect(host=DB_HOST, database=DB_NAME, user=DB_USER, password=DB_PASS)
+    conn = psycopg2.connect(host=db_host, database=db_name, user=db_user, password=db_pass)
     cur = conn.cursor()
 
     cur.execute("""
@@ -203,10 +203,10 @@ if __name__ == "__main__":
     args = parser.parse_args()
     args.min_submission_date, args.max_submission_date = "20160301", "20160630"
     SUBMISSION_DATE_RANGE = (args.min_submission_date, args.max_submission_date)
-    DB_HOST, DB_NAME, DB_USER, DB_PASS = args.pg_host, args.pg_name, args.pg_username, args.pg_password
+    db_host, db_name, db_user, db_pass = args.pg_host, args.pg_name, args.pg_username, args.pg_password
 
     start_date = datetime.strptime(SUBMISSION_DATE_RANGE[0], "%Y%m%d").date()
     end_date = datetime.strptime(SUBMISSION_DATE_RANGE[1], "%Y%m%d").date()
 
     sc = SparkContext()
-    run_job(sc)
+    run_job(sc, start_date, end_date, db_host, db_name, db_user, db_pass)
