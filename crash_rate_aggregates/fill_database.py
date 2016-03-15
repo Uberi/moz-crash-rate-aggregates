@@ -95,36 +95,8 @@ def retrieve_crash_data(sc, submission_date_range, comparable_dimensions, fracti
 
     return normal_pings.union(crash_pings)
 
-if __name__ == "__main__":
-    import argparse
-
-    import sys, os
-    try:
-        sys.path.append(os.path.join(os.environ['SPARK_HOME'], "python"))
-    except KeyError:
-        print "SPARK_HOME not set"
-        sys.exit(1)
-    from pyspark import SparkContext
-
-    today_utc = datetime.utcnow().strftime("%Y%m%d")
-    parser = argparse.ArgumentParser(description="Fill a Postgresql database with crash rate aggregates for a certain date range.")
-    parser.add_argument("--min-submission-date", help="Earliest date to include in the aggregate calculation in YYYYMMDD format (defaults to the current UTC date)", default=today_utc)
-    parser.add_argument("--max-submission-date", help="Latest date to include in the aggregate calculation in YYYYMMDD format (defaults to the current UTC date)", default=today_utc)
-    parser.add_argument("--pg-host", help="Host/address of the Postgresql database", required=True)
-    parser.add_argument("--pg-name", help="Name of the Postgresql database", required=True)
-    parser.add_argument("--pg-username", help="Username for the Postgresql database", required=True)
-    parser.add_argument("--pg-password", help="Password for the Postgresql database", required=True)
-    args = parser.parse_args()
-    args.min_submission_date, args.max_submission_date = "20160301", "20160630"
-    SUBMISSION_DATE_RANGE = (args.min_submission_date, args.max_submission_date)
-    DB_HOST, DB_NAME, DB_USER, DB_PASS = args.pg_host, args.pg_name, args.pg_username, args.pg_password
-
-    start_date = datetime.strptime(SUBMISSION_DATE_RANGE[0], "%Y%m%d").date()
-    end_date = datetime.strptime(SUBMISSION_DATE_RANGE[1], "%Y%m%d").date()
-
-    # get a representative sample of saved-session and aborted-session pings
-    sc = SparkContext()
-    pings = retrieve_crash_data(sc, SUBMISSION_DATE_RANGE, COMPARABLE_DIMENSIONS, FRACTION)
+def run_job(spark_context):
+    pings = retrieve_crash_data(spark_context, SUBMISSION_DATE_RANGE, COMPARABLE_DIMENSIONS, FRACTION)
 
     # useful statements for testing the program
     #sc = SparkContext(master="local[1]") # run sequentially with only 1 worker
@@ -208,3 +180,33 @@ if __name__ == "__main__":
     conn.commit()
     cur.close()
     conn.close()
+
+if __name__ == "__main__":
+    import argparse
+
+    import sys, os
+    try:
+        sys.path.append(os.path.join(os.environ['SPARK_HOME'], "python"))
+    except KeyError:
+        print "SPARK_HOME not set"
+        sys.exit(1)
+    from pyspark import SparkContext
+
+    today_utc = datetime.utcnow().strftime("%Y%m%d")
+    parser = argparse.ArgumentParser(description="Fill a Postgresql database with crash rate aggregates for a certain date range.")
+    parser.add_argument("--min-submission-date", help="Earliest date to include in the aggregate calculation in YYYYMMDD format (defaults to the current UTC date)", default=today_utc)
+    parser.add_argument("--max-submission-date", help="Latest date to include in the aggregate calculation in YYYYMMDD format (defaults to the current UTC date)", default=today_utc)
+    parser.add_argument("--pg-host", help="Host/address of the Postgresql database", required=True)
+    parser.add_argument("--pg-name", help="Name of the Postgresql database", required=True)
+    parser.add_argument("--pg-username", help="Username for the Postgresql database", required=True)
+    parser.add_argument("--pg-password", help="Password for the Postgresql database", required=True)
+    args = parser.parse_args()
+    args.min_submission_date, args.max_submission_date = "20160301", "20160630"
+    SUBMISSION_DATE_RANGE = (args.min_submission_date, args.max_submission_date)
+    DB_HOST, DB_NAME, DB_USER, DB_PASS = args.pg_host, args.pg_name, args.pg_username, args.pg_password
+
+    start_date = datetime.strptime(SUBMISSION_DATE_RANGE[0], "%Y%m%d").date()
+    end_date = datetime.strptime(SUBMISSION_DATE_RANGE[1], "%Y%m%d").date()
+
+    sc = SparkContext()
+    run_job(sc)
