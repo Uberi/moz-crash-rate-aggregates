@@ -3,6 +3,7 @@
 import unittest
 import logging
 import re
+from datetime import datetime
 
 import sys, os
 try:
@@ -22,7 +23,11 @@ class TestStringMethods(unittest.TestCase):
     def setUp(self):
         self.sc = pyspark.SparkContext(master="local[1]")
         self.raw_pings = self.sc.parallelize(list(dataset.generate_pings()))
-        self.crash_rate_aggregates = fill_database.compare_crashes(self.raw_pings, fill_database.COMPARABLE_DIMENSIONS).collect()
+        self.crash_rate_aggregates = fill_database.compare_crashes(
+            self.raw_pings,
+            fill_database.COMPARABLE_DIMENSIONS,
+            fill_database.DIMENSION_NAMES
+        ).collect()
 
     def tearDown(self):
         self.sc.stop()
@@ -31,23 +36,26 @@ class TestStringMethods(unittest.TestCase):
         self.assertEqual(self.raw_pings.count(), 8192)
         self.assertEqual(len(self.crash_rate_aggregates), 4096)
 
+    def test_submission_date(self):
+        for submission_date, dimensions, crashes in self.crash_rate_aggregates:
+            self.assertIn(submission_date, {datetime(2016, 3, 5), datetime(2016, 6, 7)})
+
     def test_keys(self):
-        for keys, crashes in self.crash_rate_aggregates:
-            self.assertTrue(re.match("^\d{8}$", keys[0]), keys[0]) # submission date
-            self.assertTrue(re.match("^\d+(?:\.\d+(?:[a-z]\d+)?)?$", keys[1]), keys[1]) # version
-            self.assertTrue(re.match("^\d{14}$", keys[2]), keys[2]) # build ID
-            self.assertIn(keys[3], {"nightly", "aurora", "beta", "release"}) # channel
-            self.assertIn(keys[4], {"Firefox", "Fennec"}) # application
-            self.assertIn(keys[5], {"Linux", "Windows_NT", "Darwin"}) # OS name
-            self.assertTrue(re.match("^[\d\.]+$", keys[6]), keys[6]) # OS version
-            self.assertTrue(re.match("^[\w-]+$", keys[7]), keys[7]) # architecture
-            self.assertTrue(re.match("^[\w-]+$", keys[8]), keys[8]) # country
-            self.assertTrue(keys[9] is None or "@" in keys[9], keys[9]) # experiment ID
-            self.assertTrue(re.match("^[\w-]+$", keys[10]), keys[10]) # experiment branch
-            self.assertTrue(isinstance(keys[11], bool), keys[11]) # E10S enabled
+        for submission_date, dimensions, crashes in self.crash_rate_aggregates:
+            self.assertTrue(re.match("^\d+(?:\.\d+(?:[a-z]\d+)?)?$", dimensions["build_version"]), dimensions["build_version"])
+            self.assertTrue(re.match("^\d{14}$", dimensions["build_id"]), dimensions["build_id"])
+            self.assertIn(dimensions["channel"], {"nightly", "aurora", "beta", "release"})
+            self.assertIn(dimensions["application"], {"Firefox", "Fennec"})
+            self.assertIn(dimensions["os_name"], {"Linux", "Windows_NT", "Darwin"})
+            self.assertTrue(re.match("^[\d\.]+$", dimensions["os_version"]), dimensions["os_version"])
+            self.assertTrue(re.match("^[\w-]+$", dimensions["architecture"]), dimensions["architecture"])
+            self.assertTrue(re.match("^[\w-]+$", dimensions["architecture"]), dimensions["country"])
+            self.assertTrue(dimensions["experiment_id"] is None or "@" in dimensions["experiment_id"], dimensions["experiment_id"])
+            self.assertTrue(re.match("^[\w-]+$", dimensions["experiment_branch"]), dimensions["experiment_branch"])
+            self.assertTrue(isinstance(dimensions["e10s_enabled"], bool), dimensions["e10s_enabled"])
 
     def test_crash_rates(self):
-        for keys, crashes in self.crash_rate_aggregates:
+        for submission_date, dimensions, crashes in self.crash_rate_aggregates:
             usage_hours, main_crashes, content_crashes, plugin_crashes = crashes
             self.assertEqual(usage_hours, 42 * 2 / 3600.0)
             self.assertEqual(main_crashes, 1)
