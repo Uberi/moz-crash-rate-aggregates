@@ -99,6 +99,7 @@ def run_job(spark_context, submission_date_range, db_host, db_name, db_user, db_
     start_date = datetime.strptime(submission_date_range[0], "%Y%m%d").date()
     end_date = datetime.strptime(submission_date_range[1], "%Y%m%d").date()
 
+    print("Retrieving pings for {}...".format(submission_date_range))
     pings = retrieve_crash_data(spark_context, submission_date_range, COMPARABLE_DIMENSIONS, FRACTION)
 
     # useful statements for testing the program
@@ -106,10 +107,13 @@ def run_job(spark_context, submission_date_range, db_host, db_name, db_user, db_
     #import sys, os; sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "test")); import dataset; pings = sc.parallelize(list(dataset.generate_pings())) # use test pings; very good for testing queries
 
     # compare crashes by all of the above dimensions
+    print("Comparing crashes along dimensions {}...".format(DIMENSION_NAMES))
     result = compare_crashes(pings, COMPARABLE_DIMENSIONS, DIMENSION_NAMES)
 
     conn = psycopg2.connect(host=db_host, database=db_name, user=db_user, password=db_pass)
     cur = conn.cursor()
+
+    print("Setting up database...")
 
     cur.execute("""
     CREATE TABLE IF NOT EXISTS crash_aggregates (
@@ -169,7 +173,11 @@ def run_job(spark_context, submission_date_range, db_host, db_name, db_user, db_
     # this is necessary to be able to backfill data properly
     cur.execute("""DELETE FROM crash_aggregates WHERE submission_date >= %s and submission_date <= %s""", (start_date, end_date))
 
+    print("Collecting and updating aggregates...")
+
+    aggregate_count = 0
     for submission_date, dimension_values, crash_data in result.toLocalIterator():
+        aggregate_count += 1 # doing this is actually faster than using result.count()
         usage_hours, main_crashes, content_crashes, plugin_crashes = crash_data
         cur.execute(
             """INSERT INTO crash_aggregates(submission_date, dimensions, usage_hours, main_crashes, content_crashes, plugin_crashes) VALUES (%s, %s, %s, %s, %s, %s)""",
@@ -183,6 +191,11 @@ def run_job(spark_context, submission_date_range, db_host, db_name, db_user, db_
     conn.commit()
     cur.close()
     conn.close()
+
+    print("========================================")
+    print("JOB COMPLETED SUCCESSFULLY")
+    print("inserted {} aggregates".format(aggregate_count))
+    print("========================================")
 
 if __name__ == "__main__":
     import argparse

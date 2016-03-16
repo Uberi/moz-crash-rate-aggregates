@@ -33,8 +33,9 @@ class TestStringMethods(unittest.TestCase):
         self.sc.stop()
 
     def test_length(self):
-        self.assertEqual(self.raw_pings.count(), 8192)
-        self.assertEqual(len(self.crash_rate_aggregates), 4096)
+        expected_pings = 2 ** (len(fill_database.COMPARABLE_DIMENSIONS) + 2) # the 2 extra dimensions are submission_date and reason
+        self.assertEqual(self.raw_pings.count(), expected_pings)
+        self.assertEqual(len(self.crash_rate_aggregates), expected_pings / 2) # the reason dimension should be collapsed by compare_crashes
 
     def test_submission_date(self):
         for submission_date, dimensions, crashes in self.crash_rate_aggregates:
