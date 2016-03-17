@@ -11,4 +11,6 @@ before_install: # set up the machine
 install: # set up the environment
   - sudo ansible-playbook -i ansible/inventory/localhost.ini ansible/dev.yml
 script: # run the tests
-  - bash -c 'python -m unittest discover -s test' # we need to re-run bash to get the environment variables set up by Ansible
+  - export SPARK_HOME=$(echo ~/spark-*)
+  - export PYTHONPATH=$SPARK_HOME/python
+  - python -m unittest discover -s test
