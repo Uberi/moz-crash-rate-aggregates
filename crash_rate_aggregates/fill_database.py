@@ -48,21 +48,21 @@ def compare_crashes(pings, comparable_dimensions, dimension_names):
     ping_properties = get_pings_properties(pings, comparable_dimensions + [
         "payload/info/subsessionLength",
         "meta/submissionDate",
-        "meta/reason",
+        "meta/docType",
         "payload/keyedHistograms/SUBPROCESS_ABNORMAL_ABORT/content",
         "payload/keyedHistograms/SUBPROCESS_ABNORMAL_ABORT/plugin",
         "payload/keyedHistograms/SUBPROCESS_ABNORMAL_ABORT/gmplugin",
-    ])
+    ], with_processes=True)
     crash_values = ping_properties.map(lambda p: (
         # the keys we want to filter based on
         (p["meta/submissionDate"],) + tuple(p[key] for key in comparable_dimensions),
         # the crash values
         np.array([
             max(0, min(25, (p["payload/info/subsessionLength"] or 0) / 3600.0)),
-            int(p["meta/reason"] == "aborted-session"), # main process crashes
-            p["payload/keyedHistograms/SUBPROCESS_ABNORMAL_ABORT/content"] or 0, # content process crashes
-            (p["payload/keyedHistograms/SUBPROCESS_ABNORMAL_ABORT/plugin"] or 0) +
-            (p["payload/keyedHistograms/SUBPROCESS_ABNORMAL_ABORT/gmplugin"] or 0) # plugin crashes
+            int(p["meta/docType"] == "crash"), # crash ping
+            p["payload/keyedHistograms/SUBPROCESS_ABNORMAL_ABORT/content_parent"] or 0, # content process crashes
+            (p["payload/keyedHistograms/SUBPROCESS_ABNORMAL_ABORT/plugin_parent"] or 0) +
+            (p["payload/keyedHistograms/SUBPROCESS_ABNORMAL_ABORT/gmplugin_parent"] or 0) # plugin crashes
         ])
     )).reduceByKey(lambda a, b: a + b)
 
@@ -83,7 +83,7 @@ def compare_crashes(pings, comparable_dimensions, dimension_names):
 def retrieve_crash_data(sc, submission_date_range, comparable_dimensions, fraction = 0.1):
     # get the raw data
     normal_pings = get_pings(
-        sc,
+        sc, doc_type="main",
         submission_date=submission_date_range,
         fraction=fraction
     )
