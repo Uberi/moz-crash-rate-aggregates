@@ -21,6 +21,8 @@ This project uses [Vagrant](https://www.vagrantup.com/) for setting up the devel
 
 To set up a development environment, simply run `vagrant up` and then `vagrant ssh` in the project root folder. This will open a terminal within the Vagrant VM. Do `cd /vagrant` to get to the project folder within the VM.
 
+To set up the environment locally on Ubuntu 14.04 LTS, simply run `ansible-playbook ansible/dev.yml`.
+
 Note that within the Vagrant VM, you should use `~/miniconda2/bin/python` as the main Python binary. All the packages are installed for Miniconda's Python rather than the system Python.
 
 To backfill data, just run `crash_rate_aggregates/fill_database.py` with the desired start/end dates as the `--min-submission-date`/`--max-submission-date` arguments. The operation is idempotent and existing aggregates for those dates are overwritten.
@@ -34,6 +36,8 @@ When running in the Telemetry Analysis Environment, debugging can be a pain. The
 * `yum install w3m; w3m http://localhost:4040` to show the Spark UI in the command line.
 * `tail -f /mnt/spark.log` to view the Spark logs.
 * `yum install nethogs; sudo nethogs` to monitor network utilization for each process.
+
+`crash_rate_aggregates/run.sh` is useful for manually setting up running the crash rate aggregator for the current day.
 
 Deployment
 ----------

@@ -6,7 +6,7 @@ SCALAR_VALUE = 42
 ping_dimensions = {
     "submission_date":   [u"20160305", u"20160607"],
     "application":       [u"Firefox", u"Fennec"],
-    "reason":            [u"saved-session", u"aborted-session"],
+    "doc_type":          [u"main", u"crash"],
     "channel":           [u"nightly", u"aurora"],
     "build_version":     [u"45.0a1", u"45"],
     "build_id":          [u"20160301000000", u"20160302000000"],
@@ -22,7 +22,7 @@ ping_dimensions = {
 def generate_pings():
     for submission_date in ping_dimensions["submission_date"]:
         for application in ping_dimensions["application"]:
-            for reason in ping_dimensions["reason"]:
+            for doc_type in ping_dimensions["doc_type"]:
                 for channel in ping_dimensions["channel"]:
                     for build_version in ping_dimensions["build_version"]:
                         for build_id in ping_dimensions["build_id"]:
@@ -36,7 +36,7 @@ def generate_pings():
                                                         dimensions = {
                                                             u"submission_date": submission_date,
                                                             u"application": application,
-                                                            u"reason": reason,
+                                                            u"doc_type": doc_type,
                                                             u"channel": channel,
                                                             u"build_version": build_version,
                                                             u"build_id": build_id,
@@ -54,7 +54,7 @@ def generate_payload(dimensions): #wip: country field
     meta = {
         u"submissionDate": dimensions["submission_date"],
         u"sampleId": 42,
-        u"reason": dimensions["reason"],
+        u"docType": dimensions["doc_type"],
         u"geoCountry": dimensions["country"],
     }
     application = {
