@@ -9,9 +9,6 @@
 
 
   tasks:
-    - name: create the crash-rates aggregate analysis job tarball to be run as a scheduled task
-      shell: "tar -czvf crash-rate-aggregates-job.tar.gz '{{playbook_dir}}/../crash_rate_aggregates'"
-
     - name: fetch credentials for the database from S3
       s3: bucket={{credential_bucket}} object={{credential_object}} dest={{credential_object}} mode=get
 
@@ -21,6 +18,9 @@
 
     - name: parse out the password from the database credentials
       set_fact: db_pass="{{(result.stdout|from_json).password}}"
+
+    - name: delete database credentials file
+      file: path={{credential_object}} state=absent
 
     - name: create a VPC for the database so we can add a security group
       ec2_vpc:

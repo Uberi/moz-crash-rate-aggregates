@@ -23,7 +23,7 @@ This project uses [Vagrant](https://www.vagrantup.com/) for setting up the devel
 
 To set up a development environment, simply run `vagrant up` and then `vagrant ssh` in the project root folder. This will open a terminal within the Vagrant VM. Do `cd /vagrant` to get to the project folder within the VM.
 
-To set up the environment locally on Ubuntu 14.04 LTS, simply run `ansible-playbook ansible/dev.yml`.
+To set up the environment locally on Ubuntu 14.04 LTS, simply run `sudo ansible-playbook -i ansible/inventory/localhost.ini ansible/dev.yml`.
 
 Note that within the Vagrant VM, you should use `~/miniconda2/bin/python` as the main Python binary. All the packages are installed for Miniconda's Python rather than the system Python.
 
