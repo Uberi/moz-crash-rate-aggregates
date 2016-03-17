@@ -12,5 +12,5 @@ install: # set up the environment
   - sudo ansible-playbook -i ansible/inventory/localhost.ini ansible/dev.yml
 script: # run the tests
   - export SPARK_HOME=$(echo ~/spark-*)
-  - export PYTHONPATH=$SPARK_HOME/python
+  - export PYTHONPATH=$SPARK_HOME/python:$SPARK_HOME/python/lib/py4j-0.8.2.1-src.zip
   - python -m unittest discover -s test
