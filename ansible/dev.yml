@@ -1,0 +1,62 @@
+- name: setup local development environment
+  hosts: all
+
+  vars:
+    - spark_version: 1.3.1
+    - postgresql_version: 9.4
+
+  tasks:
+    - name: install packages
+      sudo: yes
+      apt: name={{item}} state=installed update_cache=yes cache_valid_time=3600
+      with_items:
+        - libsnappy-dev
+        - liblzma-dev
+        - python-psycopg2
+        - openjdk-7-jdk
+        - postgresql-{{postgresql_version}}
+        - postgresql-contrib-{{postgresql_version}}
+        - python-numpy
+        - python-pandas
+
+    - name: install anaconda
+      command: "{{item}} chdir={{ansible_env.HOME}} creates=miniconda"
+      with_items:
+        - wget http://repo.continuum.io/miniconda/Miniconda-latest-Linux-x86_64.sh -O miniconda.sh
+        - chmod +x miniconda.sh
+        - ./miniconda.sh -b -f
+
+    - name: delete miniconda installer
+      command: rm miniconda.sh chdir={{ansible_env.HOME}}
+
+    - name: source anaconda
+      lineinfile: dest={{ansible_env.HOME}}/.bashrc regexp="^export.*miniconda2/bin" line="export PATH={{ansible_env.HOME}}/miniconda2/bin:$PATH"
+
+    - name: install common python packages
+      command: "{{item}} chdir={{ansible_env.HOME}}"
+      with_items:
+        - miniconda2/bin/conda update --yes conda
+        - miniconda2/bin/conda install --yes atlas numpy scipy matplotlib nose dateutil pandas flask supervisor tornado
+
+    - name: install spark
+      command: "{{item}} chdir={{ansible_env.HOME}} creates=spark-{{spark_version}}-bin-hadoop2.4"
+      with_items:
+        - wget http://d3kbcqa49mib13.cloudfront.net/spark-{{spark_version}}-bin-hadoop2.4.tgz
+        - tar -xzf spark-{{spark_version}}-bin-hadoop2.4.tgz
+
+    - name: delete spark installer
+      file: path={{ansible_env.HOME}}/spark-{{spark_version}}-bin-hadoop2.4.tgz state=absent
+
+    - name: source spark
+      lineinfile: >
+        dest={{ansible_env.HOME}}/.bashrc
+        regexp="^export SPARK_HOME"
+        line="export SPARK_HOME={{ansible_env.HOME}}/spark-{{spark_version}}-bin-hadoop2.4"
+    - name: source pyspark
+      lineinfile: >
+        dest={{ansible_env.HOME}}/.bashrc
+        regexp="^export PYTHONPATH"
+        line="export PYTHONPATH=$SPARK_HOME/python"
+
+    - name: setup project dependencies
+      command: "{{ansible_env.HOME}}/miniconda2/bin/pip install telemetry-tools python_moztelemetry
