@@ -58,7 +58,7 @@ def compare_crashes(pings, comparable_dimensions, dimension_names):
         (p["meta/submissionDate"],) + tuple(p[key] for key in comparable_dimensions),
         # the crash values
         np.array([
-            (p["payload/info/subsessionLength"] or 0) / 3600.0,
+            max(0, min(25, (p["payload/info/subsessionLength"] or 0) / 3600.0)),
             int(p["meta/reason"] == "aborted-session"), # main process crashes
             p["payload/keyedHistograms/SUBPROCESS_ABNORMAL_ABORT/content"] or 0, # content process crashes
             (p["payload/keyedHistograms/SUBPROCESS_ABNORMAL_ABORT/plugin"] or 0) +
