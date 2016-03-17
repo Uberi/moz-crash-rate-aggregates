@@ -76,7 +76,7 @@
       lineinfile: >
         dest={{ansible_env.HOME}}/.bashrc
         regexp="^export PYTHONPATH"
-        line="export PYTHONPATH=$SPARK_HOME/python"
+        line="export PYTHONPATH=$SPARK_HOME/python:$SPARK_HOME/python/lib/py4j-0.8.2.1-src.zip"
 
     - name: setup project dependencies
       command: "{{ansible_env.HOME}}/miniconda2/bin/pip install telemetry-tools python_moztelemetry psycopg2"
