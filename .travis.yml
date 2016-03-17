@@ -10,5 +10,6 @@ before_install: # set up the machine
   - sudo apt-get install -qq ansible
 install: # set up the environment
   - sudo ansible-playbook -i ansible/inventory/localhost.ini ansible/dev.yml
+  - SPARK_HOME={{ansible_env.HOME}}/spark-{{spark_version}}-bin-hadoop2.4
 script: # run the tests
-  - python -m unittest discover -s test
+  - bash -c 'python -m unittest discover -s test' # we need to re-run bash to get the environment variables set up by Ansible
