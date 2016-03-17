@@ -6,16 +6,29 @@
     - postgresql_version: 9.4
 
   tasks:
+    - name: get the current release codename for adding apt repositories
+      shell: "lsb_release -cs"
+      register: codename
+
+    - name: add apt repository for postgresql
+      sudo: yes
+      apt_repository: repo="deb http://apt.postgresql.org/pub/repos/apt/ {{ codename.stdout }}-pgdg main" state=present
+
+    - name: trust the postgresql apt repository signing key
+      sudo: yes
+      apt_key: url=https://www.postgresql.org/media/keys/ACCC4CF8.asc state=present
+
     - name: install packages
       sudo: yes
-      apt: name={{item}} state=installed update_cache=yes cache_valid_time=3600
+      apt: name={{item}} state=installed update_cache=yes
       with_items:
         - libsnappy-dev
         - liblzma-dev
-        - python-psycopg2
+        - libpq-dev
         - openjdk-7-jdk
         - postgresql-{{postgresql_version}}
         - postgresql-contrib-{{postgresql_version}}
+        - postgresql-server-dev-{{postgresql_version}}
         - python-numpy
         - python-pandas
 
@@ -59,4 +72,4 @@
         line="export PYTHONPATH=$SPARK_HOME/python"
 
     - name: setup project dependencies
-      command: "{{ansible_env.HOME}}/miniconda2/bin/pip install telemetry-tools python_moztelemetry
+      command: "{{ansible_env.HOME}}/miniconda2/bin/pip install telemetry-tools python_moztelemetry psycopg2"
