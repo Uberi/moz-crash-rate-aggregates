@@ -8,7 +8,7 @@ import psycopg2
 from psycopg2 import extras
 import numpy as np
 
-from moztelemetry.spark import get_pings
+from moztelemetry.spark import get_pings, get_pings_properties
 
 FRACTION = 0.1
 
@@ -46,7 +46,6 @@ assert len(COMPARABLE_DIMENSIONS) == len(DIMENSION_NAMES)
 
 def compare_crashes(pings, comparable_dimensions, dimension_names):
     """Returns a PairRDD where keys are user configurations and values are Numpy arrays of the form [usage hours, main process crashes, content process crashes, plugin crashes]"""
-    from moztelemetry.spark import get_pings_properties
     ping_properties = get_pings_properties(pings, comparable_dimensions + [
         "payload/info/subsessionLength",
         "meta/submissionDate",
