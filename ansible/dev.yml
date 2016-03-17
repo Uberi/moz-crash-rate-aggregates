@@ -80,12 +80,3 @@
 
     - name: setup project dependencies
       command: "{{ansible_env.HOME}}/miniconda2/bin/pip install telemetry-tools python_moztelemetry psycopg2"
-
-    - name: travis-specific packages
-      sudo: yes
-      apt: name={{item}} state=installed update_cache=yes
-      with_items:
-        - python-pip
-
-    - name: travis-specific installation
-      command: "pip install telemetry-tools python_moztelemetry"

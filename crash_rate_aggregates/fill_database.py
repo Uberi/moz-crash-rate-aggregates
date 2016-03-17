@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 
+import re
 import sys
 from datetime import datetime, date
 
@@ -7,7 +8,7 @@ import psycopg2
 from psycopg2 import extras
 import numpy as np
 
-from moztelemetry.spark import get_pings, get_pings_properties
+from moztelemetry.spark import get_pings
 
 FRACTION = 0.1
 
@@ -45,6 +46,7 @@ assert len(COMPARABLE_DIMENSIONS) == len(DIMENSION_NAMES)
 
 def compare_crashes(pings, comparable_dimensions, dimension_names):
     """Returns a PairRDD where keys are user configurations and values are Numpy arrays of the form [usage hours, main process crashes, content process crashes, plugin crashes]"""
+    from moztelemetry.spark import get_pings_properties
     ping_properties = get_pings_properties(pings, comparable_dimensions + [
         "payload/info/subsessionLength",
         "meta/submissionDate",
@@ -96,6 +98,7 @@ def retrieve_crash_data(sc, submission_date_range, comparable_dimensions, fracti
     return normal_pings.union(crash_pings)
 
 def run_job(spark_context, submission_date_range, db_host, db_name, db_user, db_pass):
+    """Fill the specified database with crash aggregates for the specified submission date range, creating the schema if needed."""
     start_date = datetime.strptime(submission_date_range[0], "%Y%m%d").date()
     end_date = datetime.strptime(submission_date_range[1], "%Y%m%d").date()
 
@@ -196,6 +199,19 @@ def run_job(spark_context, submission_date_range, db_host, db_name, db_user, db_
     print("JOB COMPLETED SUCCESSFULLY")
     print("inserted {} aggregates".format(aggregate_count))
     print("========================================")
+
+def cleanup_old_tables(db_host, db_name, db_user, db_pass):
+    """Drops crash_aggregates partitions that are older than 26 weeks."""
+    conn = psycopg2.connect(host=db_host, database=db_name, user=db_user, password=db_pass)
+    cur = conn.cursor()
+
+    cur.execute("""SELECT relname FROM pg_class WHERE relkind = 'r' AND relname ~ '^(crash_aggregates_partition_)';""")
+    for table_name, in cur:
+        match = re.match("^crash_aggregates_partition_(\d+)_(\d+)$")
+        year, month = int(match.group(1)), int(match.group(2))
+        weeks_since_partition_first_day = (date.today() - date(year, month, 1)) / 7
+        if weeks_since_partition_first_day > 26:
+            cur.execute("""DROP TABLE {};""".format(table_name))
 
 if __name__ == "__main__":
     import argparse
