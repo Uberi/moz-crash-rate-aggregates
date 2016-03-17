@@ -10,27 +10,34 @@
       shell: "lsb_release -cs"
       register: codename
 
-    - name: add apt repository for postgresql
-      sudo: yes
-      apt_repository: repo="deb http://apt.postgresql.org/pub/repos/apt/ {{ codename.stdout }}-pgdg main" state=present
-
-    - name: trust the postgresql apt repository signing key
-      sudo: yes
-      apt_key: url=https://www.postgresql.org/media/keys/ACCC4CF8.asc state=present
-
     - name: install packages
       sudo: yes
       apt: name={{item}} state=installed update_cache=yes
       with_items:
         - libsnappy-dev
         - liblzma-dev
-        - libpq-dev
         - openjdk-7-jdk
+        - python-numpy
+        - python-pandas
+        - wget
+        - ca-certificates
+
+    - name: add apt repository for postgresql
+      sudo: yes
+      apt_repository: repo="deb http://apt.postgresql.org/pub/repos/apt/ {{ codename.stdout }}-pgdg main" state=present
+
+    - name: trust the postgresql apt repository signing key
+      sudo: yes
+      apt_key: id=ACCC4CF8 url=https://www.postgresql.org/media/keys/ACCC4CF8.asc state=present
+
+    - name: install postgresql packages
+      sudo: yes
+      apt: name={{item}} state=installed update_cache=yes
+      with_items:
+        - libpq-dev
         - postgresql-{{postgresql_version}}
         - postgresql-contrib-{{postgresql_version}}
         - postgresql-server-dev-{{postgresql_version}}
-        - python-numpy
-        - python-pandas
 
     - name: install anaconda
       command: "{{item}} chdir={{ansible_env.HOME}} creates=miniconda"
