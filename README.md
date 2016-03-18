@@ -14,7 +14,7 @@ Scheduled batch job for computing aggregate crash rates across a variety of crit
 * The database is meant to be consumed by [re:dash](https://sql.telemetry.mozilla.org/dashboard/general) to make crash rate dashboards.
     * On the re:dash interface, these aggregates can be used by queries when the query data source is set to "Crash-DB".
     * The database has one table, `crash_aggregates`, that has all of the dimensions, submission dates, and etc.
-    * For example, you can get the main process crashes per hour on Nightly for March 14, 2016 with `SELECT sum(main_crashes) / sum(usage_hours) FROM crash_aggregates WHERE dimensions->>'channel' = 'nightly' AND submission_date = '2016-03-14'`.
+    * For example, you can get the main process crashes per hour on Nightly for March 14, 2016 with `SELECT sum(stats->>'main_crashes') / sum(stats->>'usage_hours') FROM aggregates WHERE dimensions->>'channel' = 'nightly' AND submission_date = '2016-03-14'`.
 
 Development
 -----------
@@ -29,7 +29,7 @@ Note that within the Vagrant VM, you should use `~/miniconda2/bin/python` as the
 
 To backfill data, just run `crash_rate_aggregates/fill_database.py` with the desired start/end dates as the `--min-submission-date`/`--max-submission-date` arguments. The operation is idempotent and existing aggregates for those dates are overwritten.
 
-To run the tests, execute `python -m unittest discover` in the `test/` directory.
+To run the tests, execute `PYTHONPATH=.:$PYTHONPATH python -m unittest discover -s test` in the project root directory.
 
 To add a new dimension to compare on, add matching entries to `COMPARABLE_DIMENSIONS` and `DIMENSION_NAMES` in `crash_rate_aggregates/fill_database.py`.
 
@@ -39,7 +39,7 @@ When running in the Telemetry Analysis Environment, debugging can be a pain. The
 * `tail -f /mnt/spark.log` to view the Spark logs.
 * `yum install nethogs; sudo nethogs` to monitor network utilization for each process.
 
-`crash_rate_aggregates/run.sh` is useful for manually setting up running the crash rate aggregator for the current day.
+`crash_rate_aggregates/run.sh` is useful for manually setting up running the crash rate aggregator for the current day. To use this script, AWS credentials need to be set up. This can be done by running `aws configure` in the Vagrant VM, and following the prompts.
 
 Deployment
 ----------

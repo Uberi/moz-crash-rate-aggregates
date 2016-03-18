@@ -21,8 +21,8 @@ Vagrant.configure("2") do |config|
   config.vm.define "dev" do |dev|
     dev.ssh.insert_key = false
     dev.vm.box = "ubuntu/trusty64"
-    dev.vm.network :forwarded_port, host: 5000, guest: 5000
-    dev.vm.network :forwarded_port, host: 5432, guest: 5432
+    dev.vm.network :forwarded_port, host: 4040, guest: 4040 # forward the SparkUI port for testing
+    dev.vm.network :forwarded_port, host: 5432, guest: 5432 # forward the Postgresql port for testing
     dev.vm.provision "ansible" do |ansible|
       ansible.playbook = "ansible/dev.yml"
     end

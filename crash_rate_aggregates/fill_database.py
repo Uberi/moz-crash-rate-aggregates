@@ -2,7 +2,8 @@
 
 import re
 import sys
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
+import dateutil.parser
 
 import psycopg2
 from psycopg2 import extras
@@ -44,40 +45,56 @@ DIMENSION_NAMES = [
 ]
 assert len(COMPARABLE_DIMENSIONS) == len(DIMENSION_NAMES)
 
-def compare_crashes(pings, comparable_dimensions, dimension_names):
+def compare_crashes(pings, start_date, end_date, comparable_dimensions, dimension_names):
     """Returns a PairRDD where keys are user configurations and values are Numpy arrays of the form [usage hours, main process crashes, content process crashes, plugin crashes]"""
     ping_properties = get_pings_properties(pings, comparable_dimensions + [
-        "payload/info/subsessionLength",
         "meta/submissionDate",
+        "creationDate",
+        "payload/info/subsessionLength",
         "meta/docType",
         "payload/keyedHistograms/SUBPROCESS_ABNORMAL_ABORT/content",
         "payload/keyedHistograms/SUBPROCESS_ABNORMAL_ABORT/plugin",
         "payload/keyedHistograms/SUBPROCESS_ABNORMAL_ABORT/gmplugin",
     ], with_processes=True)
-    crash_values = ping_properties.map(lambda p: (
-        # the keys we want to filter based on
-        (p["meta/submissionDate"],) + tuple(p[key] for key in comparable_dimensions),
-        # the crash values
-        np.array([
-            max(0, min(25, (p["payload/info/subsessionLength"] or 0) / 3600.0)),
-            int(p["meta/docType"] == "crash"), # crash ping
-            p["payload/keyedHistograms/SUBPROCESS_ABNORMAL_ABORT/content_parent"] or 0, # content process crashes
-            (p["payload/keyedHistograms/SUBPROCESS_ABNORMAL_ABORT/plugin_parent"] or 0) +
-            (p["payload/keyedHistograms/SUBPROCESS_ABNORMAL_ABORT/gmplugin_parent"] or 0) # plugin crashes
-        ])
-    )).reduceByKey(lambda a, b: a + b)
-
-    def dimension_mapping(pair):
-        dimension_key, aggregates = pair
-        submission_date, dimension_values = dimension_key[0], dimension_key[1:]
-        submission_date = datetime.strptime(submission_date, "%Y%m%d") # convert the YYYYMMDD format to a real datetime
+    def get_crash_pair(ping): # responsible for normalizing a single ping into a crash pair
+        creation_date = ping["creationDate"]
         return (
-            submission_date,
+            # the keys we want to filter based on
+            (
+                ping["meta/submissionDate"], # YYYYMMDD date the ping was submitted
+                creation_date, # ISO8601 date the ping was created by the client
+            ) + tuple(ping[key] for key in comparable_dimensions), # all the dimensions we can compare by
+            # the crash values
+            np.array([
+                max(0, min(25, (ping["payload/info/subsessionLength"] or 0) / 3600.0)), # usage hours
+                int(ping["meta/docType"] == "crash"), # main crash (is a crash ping)
+                ping["payload/keyedHistograms/SUBPROCESS_ABNORMAL_ABORT/content_parent"] or 0, # content process crashes
+                (ping["payload/keyedHistograms/SUBPROCESS_ABNORMAL_ABORT/plugin_parent"] or 0) +
+                (ping["payload/keyedHistograms/SUBPROCESS_ABNORMAL_ABORT/gmplugin_parent"] or 0) # plugin crashes
+            ])
+        )
+    crash_values = ping_properties.map(get_crash_pair).reduceByKey(lambda a, b: a + b)
+
+    def dimension_mapping(pair): # responsible for converting aggregate crash pairs into individual dimension fields
+        dimension_key = pair[0]
+        (submission_date, activity_date), dimension_values = dimension_key[:2], dimension_key[2:]
+        submission_date = datetime.strptime(submission_date, "%Y%m%d").date() # convert the YYYYMMDD format to a real date
+        activity_date = dateutil.parser.parse(activity_date).date() # the activity date is the date portion of creationDate
+        submission_date = max(start_date, min(end_date, submission_date)) # normalize the submission date if it's out of range
+        activity_date = max(start_date - timedelta(days=7), min(end_date, activity_date)) # normalize the activity date if it's out of range
+        usage_hours, main_crashes, content_crashes, plugin_crashes = pair[1]
+        return (
+            submission_date, activity_date,
             {
                 key: dimension_value
                 for key, dimension_value in zip(dimension_names, dimension_values)
             },
-            aggregates, # crash values
+            {
+                "usage_hours": usage_hours,
+                "main_crashes": main_crashes,
+                "content_crashes": content_crashes,
+                "plugin_crashes": plugin_crashes,
+            },
         )
     return crash_values.map(dimension_mapping)
 
@@ -105,12 +122,11 @@ def run_job(spark_context, submission_date_range, db_host, db_name, db_user, db_
     pings = retrieve_crash_data(spark_context, submission_date_range, COMPARABLE_DIMENSIONS, FRACTION)
 
     # useful statements for testing the program
-    #sc = SparkContext(master="local[1]") # run sequentially with only 1 worker
-    #import sys, os; sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "test")); import dataset; pings = sc.parallelize(list(dataset.generate_pings())) # use test pings; very good for testing queries
+    #import sys, os; sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "test")); import dataset; pings = sc.parallelize(list(dataset.generate_pings())) # use test pings; very good for debugging queries
 
     # compare crashes by all of the above dimensions
     print("Comparing crashes along dimensions {}...".format(DIMENSION_NAMES))
-    result = compare_crashes(pings, COMPARABLE_DIMENSIONS, DIMENSION_NAMES)
+    result = compare_crashes(pings, start_date, end_date, COMPARABLE_DIMENSIONS, DIMENSION_NAMES)
 
     conn = psycopg2.connect(host=db_host, database=db_name, user=db_user, password=db_pass)
     cur = conn.cursor()
@@ -118,19 +134,17 @@ def run_job(spark_context, submission_date_range, db_host, db_name, db_user, db_
     print("Setting up database...")
 
     cur.execute("""
-    CREATE TABLE IF NOT EXISTS crash_aggregates (
+    CREATE TABLE IF NOT EXISTS aggregates (
         id serial PRIMARY KEY,
         submission_date date NOT NULL,
+        activity_date date NOT NULL,
         dimensions jsonb,
-        usage_hours real NOT NULL,
-        main_crashes real NOT NULL,
-        content_crashes real NOT NULL,
-        plugin_crashes real NOT NULL
+        stats jsonb
     );
     """)
 
-    # create child tables that inherit from the crash_aggregates table; these partition the data by month for faster querying
-    # when running queries, we can still select from the parent crash_aggregates table; the query will use the child tables as needed
+    # create child tables that inherit from `aggregates`; these partition the data by month for faster querying
+    # when running queries, we can still select from `aggregates`; the query will use the child tables as needed
     current_month = date(start_date.year, start_date.month, 1)
     while current_month <= end_date: # loop through the month range
         next_month = date(current_month.year, (current_month.month % 12) + 1, 1)
@@ -141,52 +155,52 @@ def run_job(spark_context, submission_date_range, db_host, db_name, db_user, db_
             CREATE TABLE {table_name} (
                 CONSTRAINT {table_name}_pk PRIMARY KEY (id),
                 CONSTRAINT {table_name}_ck CHECK (submission_date >= DATE '{current_month}' AND submission_date < DATE '{next_month}')
-            ) INHERITS (crash_aggregates);
+            ) INHERITS (aggregates);
             CREATE INDEX {table_name}_date_idx ON {table_name} (submission_date);
             CREATE INDEX {table_name}_dimension_idx ON {table_name} USING gin (dimensions);
         END IF;
         END
         $$
         """.format(
-            table_name="crash_aggregates_partition_{}_{}".format(current_month.year, current_month.month),
+            table_name="aggregates_partition_{}_{}".format(current_month.year, current_month.month),
             current_month=datetime.strftime(current_month, "%Y-%m-%d"),
             next_month=datetime.strftime(next_month, "%Y-%m-%d"),
         ))
         current_month = next_month
 
-    # when we attempt to insert into crash_aggregates, redirect it to the proper child table instead
+    # when we attempt to insert or delete into `aggregates`, redirect it to the proper child table instead
     # the child table will only store a month's worth of data (~3000000 rows), so queries that only need
     # a specific submission date range will have much less to look through
     cur.execute("""
-    CREATE OR REPLACE FUNCTION crash_aggregates_insert_trigger()
+    CREATE OR REPLACE FUNCTION aggregates_insert_trigger()
     RETURNS TRIGGER AS $$
     BEGIN
-        EXECUTE format('INSERT INTO %I SELECT $1.*', 'crash_aggregates_partition_' || EXTRACT(YEAR FROM NEW.submission_date) || '_' || EXTRACT(MONTH FROM NEW.submission_date)) USING NEW;
+        EXECUTE format('INSERT INTO %I SELECT $1.*', 'aggregates_partition_' || EXTRACT(YEAR FROM NEW.submission_date) || '_' || EXTRACT(MONTH FROM NEW.submission_date)) USING NEW;
         RETURN NEW;
     END;
-    $$
-    LANGUAGE plpgsql;
+    $$ LANGUAGE plpgsql;
 
-    DROP TRIGGER IF EXISTS insert_crash_aggregates_trigger ON crash_aggregates;
-    CREATE TRIGGER insert_crash_aggregates_trigger BEFORE INSERT ON crash_aggregates FOR EACH ROW EXECUTE PROCEDURE crash_aggregates_insert_trigger();
+    DROP TRIGGER IF EXISTS insert_aggregates_trigger ON aggregates;
+    CREATE TRIGGER insert_aggregates_trigger BEFORE INSERT ON aggregates FOR EACH ROW EXECUTE PROCEDURE aggregates_insert_trigger();
     """)
 
     # remove previous data for the selected days, if available
     # this is necessary to be able to backfill data properly
-    cur.execute("""DELETE FROM crash_aggregates WHERE submission_date >= %s and submission_date <= %s""", (start_date, end_date))
+    cur.execute("""DELETE FROM aggregates WHERE submission_date >= %s and submission_date <= %s""", (start_date, end_date))
+    print("Removed {} existing aggregates for the submission date range {} to {}".format(cur.rowcount, start_date, end_date))
 
     print("Collecting and updating aggregates...")
 
     aggregate_count = 0
-    for submission_date, dimension_values, crash_data in result.toLocalIterator():
+    for submission_date, activity_date, dimensions, crash_data in result.take(300): #result.toLocalIterator():
         aggregate_count += 1 # doing this is actually faster than using result.count()
-        usage_hours, main_crashes, content_crashes, plugin_crashes = crash_data
         cur.execute(
-            """INSERT INTO crash_aggregates(submission_date, dimensions, usage_hours, main_crashes, content_crashes, plugin_crashes) VALUES (%s, %s, %s, %s, %s, %s)""",
+            """INSERT INTO aggregates(submission_date, activity_date, dimensions, stats) VALUES (%s, %s, %s, %s)""",
             (
                 submission_date,
-                extras.Json(dimension_values),
-                usage_hours, main_crashes, content_crashes, plugin_crashes
+                activity_date,
+                extras.Json(dimensions),
+                extras.Json(crash_data),
             )
         )
 
@@ -200,17 +214,25 @@ def run_job(spark_context, submission_date_range, db_host, db_name, db_user, db_
     print("========================================")
 
 def cleanup_old_tables(db_host, db_name, db_user, db_pass):
-    """Drops crash_aggregates partitions that are older than 26 weeks."""
+    """Drops partitions of the `aggregates` table that are older than 26 weeks."""
     conn = psycopg2.connect(host=db_host, database=db_name, user=db_user, password=db_pass)
     cur = conn.cursor()
 
-    cur.execute("""SELECT relname FROM pg_class WHERE relkind = 'r' AND relname ~ '^(crash_aggregates_partition_)';""")
+    cur.execute("""SELECT relname FROM pg_class WHERE relkind = 'r' AND relname ~ '^(aggregates_partition_)';""")
+    table_drop_count = 0
     for table_name, in cur:
-        match = re.match("^crash_aggregates_partition_(\d+)_(\d+)$")
+        match = re.match("^aggregates_partition_(\d+)_(\d+)$", table_name)
         year, month = int(match.group(1)), int(match.group(2))
-        weeks_since_partition_first_day = (date.today() - date(year, month, 1)) / 7
+        weeks_since_partition_first_day = (date.today() - date(year, month, 1)).days / 7
         if weeks_since_partition_first_day > 26:
+            print("Dropping table {} since it holds data older than 26 weeks.")
+            table_drop_count += 1
             cur.execute("""DROP TABLE {};""".format(table_name))
+
+    print("========================================")
+    print("OLD TABLES CLEANED SUCCESSFULLY")
+    print("dropped {} tables".format(table_drop_count))
+    print("========================================")
 
 if __name__ == "__main__":
     import argparse
@@ -223,10 +245,10 @@ if __name__ == "__main__":
         sys.exit(1)
     from pyspark import SparkContext
 
-    today_utc = datetime.utcnow().strftime("%Y%m%d")
+    yesterday_utc = (datetime.utcnow() - timedelta(days=1)).strftime("%Y%m%d")
     parser = argparse.ArgumentParser(description="Fill a Postgresql database with crash rate aggregates for a certain date range.")
-    parser.add_argument("--min-submission-date", help="Earliest date to include in the aggregate calculation in YYYYMMDD format (defaults to the current UTC date)", default=today_utc)
-    parser.add_argument("--max-submission-date", help="Latest date to include in the aggregate calculation in YYYYMMDD format (defaults to the current UTC date)", default=today_utc)
+    parser.add_argument("--min-submission-date", help="Earliest date to include in the aggregate calculation in YYYYMMDD format (defaults to the current UTC date)", default=yesterday_utc)
+    parser.add_argument("--max-submission-date", help="Latest date to include in the aggregate calculation in YYYYMMDD format (defaults to yesterday's UTC date)", default=yesterday_utc)
     parser.add_argument("--pg-host", help="Host/address of the Postgresql database", required=True)
     parser.add_argument("--pg-name", help="Name of the Postgresql database", required=True)
     parser.add_argument("--pg-username", help="Username for the Postgresql database", required=True)
@@ -236,5 +258,8 @@ if __name__ == "__main__":
     submission_date_range = (args.min_submission_date, args.max_submission_date)
     db_host, db_name, db_user, db_pass = args.pg_host, args.pg_name, args.pg_username, args.pg_password
 
+    cleanup_old_tables(db_host, db_name, db_user, db_pass)
+
     sc = SparkContext()
+    #sc = SparkContext(master="local[1]") # run sequentially with only 1 worker (useful for debugging)
     run_job(sc, submission_date_range, db_host, db_name, db_user, db_pass)

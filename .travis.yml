@@ -14,4 +14,4 @@ script: # run the tests
   - export SPARK_HOME=$(echo ~/spark-*)
   - export PYTHONPATH=$SPARK_HOME/python:$SPARK_HOME/python/lib/py4j-0.8.2.1-src.zip:$PYTHONPATH
   - export PYSPARK_PYTHON=~/miniconda2/bin/python
-  - ~/miniconda2/bin/python -m unittest discover -s test
+  - PYTHONPATH=.:$PYTHONPATH ~/miniconda2/bin/python -m unittest discover -s test
