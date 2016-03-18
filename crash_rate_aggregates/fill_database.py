@@ -45,6 +45,8 @@ DIMENSION_NAMES = [
 ]
 assert len(COMPARABLE_DIMENSIONS) == len(DIMENSION_NAMES)
 
+INSERT_CHUNK_SIZE = 500 # number of records to accumulate in a single database request; higher values mean faster database insertion at the expense of memory usage
+
 def compare_crashes(pings, start_date, end_date, comparable_dimensions, dimension_names):
     """Returns a PairRDD where keys are user configurations and values are Numpy arrays of the form [usage hours, main process crashes, content process crashes, plugin crashes]"""
     ping_properties = get_pings_properties(pings, comparable_dimensions + [
@@ -191,18 +193,22 @@ def run_job(spark_context, submission_date_range, db_host, db_name, db_user, db_
 
     print("Collecting and updating aggregates...")
 
+    row_accumulator = [] # do inserts in large chunks for a significantly faster insertion operation while allowing for larger-than-RAM datasets
     aggregate_count = 0
-    for submission_date, activity_date, dimensions, crash_data in result.take(300): #result.toLocalIterator():
+    for submission_date, activity_date, dimensions, crash_data in result.toLocalIterator():
         aggregate_count += 1 # doing this is actually faster than using result.count()
-        cur.execute(
-            """INSERT INTO aggregates(submission_date, activity_date, dimensions, stats) VALUES (%s, %s, %s, %s)""",
-            (
-                submission_date,
-                activity_date,
-                extras.Json(dimensions),
-                extras.Json(crash_data),
-            )
-        )
+        row_accumulator.append(cur.mogrify("(%s, %s, %s, %s)", (
+            submission_date,
+            activity_date,
+            extras.Json(dimensions),
+            extras.Json(crash_data),
+        )))
+        if len(row_accumulator) >= INSERT_CHUNK_SIZE: # full chunk obtained, perform insert
+            cur.execute("""INSERT INTO aggregates(submission_date, activity_date, dimensions, stats) VALUES {}""".format(",".join(row_accumulator)))
+            row_accumulator = []
+
+    if row_accumulator: # handle any remaining rows that need to be inserted
+        cur.execute("""INSERT INTO aggregates(submission_date, activity_date, dimensions, stats) VALUES {}""".format(",".join(row_accumulator)))
 
     conn.commit()
     cur.close()
