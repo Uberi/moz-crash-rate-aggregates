@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 
-<<<ENDCOMMENT
+<<ENDCOMMENT
 # these setup routines are used to set up an environment when non is available, like in Vagrant
 # since the script usually runs on the Telemetry Spark Analysis environment, the requirements should already be installed
 
 # install packages
-sudo apt-get install libsnappy-dev liblzma-dev python-psycopg2 openjdk-7-jdk
+sudo apt-get install -y libsnappy-dev liblzma-dev python-psycopg2 openjdk-7-jdk
 sudo pip2 install telemetry-tools
-sudo apt-get install python-numpy python-pandas # these are dependencies of python_moztelemetry, but installing them with apt-get massively speeds up python_moztelemetry installation
+sudo apt-get install -y python-numpy python-pandas # these are dependencies of python_moztelemetry, but installing them with apt-get massively speeds up python_moztelemetry installation
 sudo pip2 install python_moztelemetry
 
 # install Spark

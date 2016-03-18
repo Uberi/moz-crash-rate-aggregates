@@ -3,7 +3,7 @@
 import unittest
 import logging
 import re
-from datetime import datetime
+from datetime import date
 
 import sys, os
 try:
@@ -16,33 +16,37 @@ import pyspark
 import dataset
 
 import sys, os
-sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
-from crash_rate_aggregates import fill_database
+from crash_rate_aggregates.fill_database import compare_crashes, COMPARABLE_DIMENSIONS, DIMENSION_NAMES
 
 class TestStringMethods(unittest.TestCase):
     def setUp(self):
         self.sc = pyspark.SparkContext(master="local[1]")
         self.raw_pings = self.sc.parallelize(list(dataset.generate_pings()))
-        self.crash_rate_aggregates = fill_database.compare_crashes(
+
+        self.crash_rate_aggregates = compare_crashes(
             self.raw_pings,
-            fill_database.COMPARABLE_DIMENSIONS,
-            fill_database.DIMENSION_NAMES
+            date(2016, 3, 5), date(2016, 6, 7),
+            COMPARABLE_DIMENSIONS, DIMENSION_NAMES
         ).collect()
 
     def tearDown(self):
         self.sc.stop()
 
     def test_length(self):
-        expected_pings = 2 ** (len(fill_database.COMPARABLE_DIMENSIONS) + 2) # the 2 extra dimensions are submission_date and doc_type
+        expected_pings = 2 ** (len(COMPARABLE_DIMENSIONS) + 3) # the 2 extra dimensions are submission_date, activity_date, and doc_type
         self.assertEqual(self.raw_pings.count(), expected_pings)
         self.assertEqual(len(self.crash_rate_aggregates), expected_pings / 2) # the doc_type dimension should be collapsed by compare_crashes
 
     def test_submission_date(self):
-        for submission_date, dimensions, crashes in self.crash_rate_aggregates:
-            self.assertIn(submission_date, {datetime(2016, 3, 5), datetime(2016, 6, 7)})
+        for submission_date, activity_date, dimensions, crashes in self.crash_rate_aggregates:
+            self.assertIn(submission_date, {date(2016, 3, 5), date(2016, 6, 7)})
+
+    def test_activity_date(self):
+        for submission_date, activity_date, dimensions, crashes in self.crash_rate_aggregates:
+            self.assertIn(activity_date, {date(2016, 3, 15), date(2016, 3, 13)})
 
     def test_keys(self):
-        for submission_date, dimensions, crashes in self.crash_rate_aggregates:
+        for submission_date, activity_date, dimensions, stats in self.crash_rate_aggregates:
             self.assertTrue(re.match("^\d+(?:\.\d+(?:[a-z]\d+)?)?$", dimensions["build_version"]), dimensions["build_version"])
             self.assertTrue(re.match("^\d{14}$", dimensions["build_id"]), dimensions["build_id"])
             self.assertIn(dimensions["channel"], {"nightly", "aurora", "beta", "release"})
@@ -56,12 +60,11 @@ class TestStringMethods(unittest.TestCase):
             self.assertTrue(isinstance(dimensions["e10s_enabled"], bool), dimensions["e10s_enabled"])
 
     def test_crash_rates(self):
-        for submission_date, dimensions, crashes in self.crash_rate_aggregates:
-            usage_hours, main_crashes, content_crashes, plugin_crashes = crashes
-            self.assertEqual(usage_hours, 42 * 2 / 3600.0)
-            self.assertEqual(main_crashes, 1)
-            self.assertEqual(content_crashes, 42 * 2)
-            self.assertEqual(plugin_crashes, 42 * 4)
+        for submission_date, activity_date, dimensions, stats in self.crash_rate_aggregates:
+            self.assertEqual(stats["usage_hours"], 42 * 2 / 3600.0)
+            self.assertEqual(stats["main_crashes"], 1)
+            self.assertEqual(stats["content_crashes"], 42 * 2)
+            self.assertEqual(stats["plugin_crashes"], 42 * 4)
 
 if __name__ == '__main__':
     unittest.main()
