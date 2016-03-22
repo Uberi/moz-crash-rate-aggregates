@@ -6,10 +6,6 @@
     - postgresql_version: 9.4
 
   tasks:
-    - name: get the current release codename for adding apt repositories
-      shell: "lsb_release -cs"
-      register: codename
-
     - name: install packages
       sudo: yes
       apt: name={{item}} state=installed update_cache=yes
@@ -21,6 +17,10 @@
         - python-pandas
         - wget
         - ca-certificates
+
+    - name: get the current release codename for adding apt repositories
+      shell: "lsb_release -cs"
+      register: codename
 
     - name: add apt repository for postgresql
       sudo: yes
@@ -58,11 +58,11 @@
         - miniconda2/bin/conda update --yes conda
         - miniconda2/bin/conda install --yes atlas numpy scipy matplotlib nose dateutil pandas flask supervisor tornado
 
+    - name: get spark
+      get_url: url=http://d3kbcqa49mib13.cloudfront.net/spark-{{spark_version}}-bin-hadoop2.4.tgz dest={{ansible_env.HOME}}/spark.tgz
+
     - name: install spark
-      command: "{{item}} chdir={{ansible_env.HOME}} creates=spark-{{spark_version}}-bin-hadoop2.4"
-      with_items:
-        - wget http://d3kbcqa49mib13.cloudfront.net/spark-{{spark_version}}-bin-hadoop2.4.tgz
-        - tar -xzf spark-{{spark_version}}-bin-hadoop2.4.tgz
+      unarchive: src={{ansible_env.HOME}}/spark.tgz dest={{ansible_env.HOME}}
 
     - name: delete spark installer
       file: path={{ansible_env.HOME}}/spark-{{spark_version}}-bin-hadoop2.4.tgz state=absent
