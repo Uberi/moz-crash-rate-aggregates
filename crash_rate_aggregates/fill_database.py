@@ -108,10 +108,10 @@ def retrieve_crash_data(sc, submission_date_range, comparable_dimensions, fracti
         fraction=fraction
     )
     crash_pings = get_pings(
-        sc, doc_type="main",
+        sc, doc_type="crash",
         submission_date=submission_date_range,
         fraction=fraction
-    ).filter(lambda p: p.get("meta", {}).get("reason") == "aborted-session")
+    )
 
     return normal_pings.union(crash_pings)
 
@@ -122,6 +122,7 @@ def run_job(spark_context, submission_date_range, db_host, db_name, db_user, db_
 
     print("Retrieving pings for {}...".format(submission_date_range))
     pings = retrieve_crash_data(spark_context, submission_date_range, COMPARABLE_DIMENSIONS, FRACTION)
+    print("Retrieved {} pings".format(pings.count()))
 
     # useful statements for testing the program
     #import sys, os; sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "test")); import dataset; pings = sc.parallelize(list(dataset.generate_pings())) # use test pings; very good for debugging queries
