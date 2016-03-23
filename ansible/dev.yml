@@ -62,10 +62,10 @@
       get_url: url=http://d3kbcqa49mib13.cloudfront.net/spark-{{spark_version}}-bin-hadoop2.4.tgz dest={{ansible_env.HOME}}/spark.tgz
 
     - name: install spark
-      unarchive: src={{ansible_env.HOME}}/spark.tgz dest={{ansible_env.HOME}}
+      unarchive: src={{ansible_env.HOME}}/spark.tgz dest={{ansible_env.HOME}} copy=no
 
     - name: delete spark installer
-      file: path={{ansible_env.HOME}}/spark-{{spark_version}}-bin-hadoop2.4.tgz state=absent
+      file: path={{ansible_env.HOME}}/spark.tgz state=absent
 
     - name: source spark
       lineinfile: >
