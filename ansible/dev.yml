@@ -75,7 +75,7 @@
         - wget https://d3kbcqa49mib13.cloudfront.net/spark-{{spark_version}}-bin-hadoop2.4.tgz -O spark.tgz
 
     - name: install spark
-      unarchive: src={{ansible_env.HOME}}/spark.tgz dest={{ansible_env.HOME}} copy=no creates=spark-{{spark_version}}-bin-hadoop2.4
+      unarchive: src={{ansible_env.HOME}}/spark.tgz dest={{ansible_env.HOME}} copy=no
 
     - name: source spark
       lineinfile: >
