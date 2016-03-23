@@ -39,8 +39,14 @@
         - postgresql-contrib-{{postgresql_version}}
         - postgresql-server-dev-{{postgresql_version}}
 
-    - name: get anaconda
-      get_url: url=https://repo.continuum.io/miniconda/Miniconda-latest-Linux-x86_64.sh dest={{ansible_env.HOME}}/miniconda.sh mode=700
+    # we have to use wget here instead of the built in Ansible get_url module
+    # because Python versions before 2.7.9 don't support SNI, which is needed
+    # to verify the download via HTTPS, while wget does
+    - name: install anaconda
+      command: "{{item}} chdir={{ansible_env.HOME}} creates={{ansible_env.HOME}}/miniconda.sh"
+      with_items:
+        - wget https://repo.continuum.io/miniconda/Miniconda-latest-Linux-x86_64.sh -O miniconda.sh
+        - chmod +x miniconda.sh
 
     - name: install anaconda
       command: ./miniconda.sh -b -f chdir={{ansible_env.HOME}} creates=miniconda2
