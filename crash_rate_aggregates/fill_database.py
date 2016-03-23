@@ -11,7 +11,7 @@ import numpy as np
 
 from moztelemetry.spark import get_pings, get_pings_properties
 
-FRACTION = 0.01
+FRACTION = 0.1
 
 # paths/dimensions within the ping to compare by, in the same format as the second parameter to `get_pings_properties`
 # in https://github.com/mozilla/python_moztelemetry/blob/master/moztelemetry/spark.py
@@ -59,12 +59,19 @@ def compare_crashes(pings, start_date, end_date, comparable_dimensions, dimensio
         "payload/keyedHistograms/SUBPROCESS_ABNORMAL_ABORT/gmplugin",
     ], with_processes=True)
     def is_valid(ping): # sanity check to make sure the ping is actually usable for our purposes
-        return isinstance(ping["meta/submissionDate"], str) and isinstance(ping["creationDate"], str)
+        return (
+            (isinstance(ping["meta/submissionDate"], str) or isinstance(ping["meta/submissionDate"], unicode)) and
+            (isinstance(ping["creationDate"], str) or isinstance(ping["creationDate"], unicode))
+        )
     def get_crash_pair(ping): # responsible for normalizing a single ping into a crash pair
         # we need to parse and normalize the dates here rather than at the aggregates level,
         # because we need to normalize and get rid of the time portion
+
+        # date the ping was received
         submission_date = datetime.strptime(ping["meta/submissionDate"], "%Y%m%d").date() # convert the YYYYMMDD format to a real date
         submission_date = max(start_date, min(end_date, submission_date)) # normalize the submission date if it's out of range
+
+        # date the ping was created on the client
         activity_date = dateutil.parser.parse(ping["creationDate"]).date() # the activity date is the date portion of creationDate
         activity_date = max(submission_date - timedelta(days=7), min(submission_date, activity_date)) # normalize the activity date if it's out of range
 
@@ -74,10 +81,7 @@ def compare_crashes(pings, start_date, end_date, comparable_dimensions, dimensio
 
         return (
             # the keys we want to filter based on
-            (
-                submission_date, # date the ping was submitted
-                activity_date, # date the ping was created by the client
-            ) + tuple(ping[key] for key in comparable_dimensions), # all the dimensions we can compare by
+            (submission_date, activity_date) + tuple(ping[key] for key in comparable_dimensions), # all the dimensions we can compare by
             # the crash values
             np.array([
                 max(0, min(25, (ping["payload/info/subsessionLength"] or 0) / 3600.0)), # usage hours
@@ -130,7 +134,6 @@ def run_job(spark_context, submission_date_range, db_host, db_name, db_user, db_
 
     print("Retrieving pings for {}...".format(submission_date_range))
     pings = retrieve_crash_data(spark_context, submission_date_range, COMPARABLE_DIMENSIONS, FRACTION)
-    print("Retrieved about {} pings".format(pings.countApprox(30000, 0.95)))
 
     # useful statements for testing the program
     #import sys, os; sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "test")); import dataset; pings = sc.parallelize(list(dataset.generate_pings())) # use test pings; very good for debugging queries
