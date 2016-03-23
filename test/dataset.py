@@ -5,7 +5,7 @@ SCALAR_VALUE = 42
 
 ping_dimensions = {
     "submission_date":   [u"20160305", u"20160607"],
-    "activity_date":     [u"2016-03-15T08:10:03.503Z", u"2016-03-13T08:10:17.492Z"],
+    "activity_date":     [u"2016-03-02T08:10:03.503Z", u"2016-06-01T08:10:17.492Z"],
     "application":       [u"Firefox", u"Fennec"],
     "doc_type":          [u"main", u"crash"],
     "channel":           [u"nightly", u"aurora"],
