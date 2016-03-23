@@ -32,22 +32,18 @@
 
     - name: install postgresql packages
       sudo: yes
-      apt: name={{item}} state=installed update_cache=yes
+      apt: name={{item}} state=installed update_cache=yes cache_valid_time=3600
       with_items:
         - libpq-dev
         - postgresql-{{postgresql_version}}
         - postgresql-contrib-{{postgresql_version}}
         - postgresql-server-dev-{{postgresql_version}}
 
-    - name: install anaconda
-      command: "{{item}} chdir={{ansible_env.HOME}} creates=miniconda"
-      with_items:
-        - wget http://repo.continuum.io/miniconda/Miniconda-latest-Linux-x86_64.sh -O miniconda.sh
-        - chmod +x miniconda.sh
-        - ./miniconda.sh -b -f
+    - name: get anaconda
+      get_url: url=https://repo.continuum.io/miniconda/Miniconda-latest-Linux-x86_64.sh dest={{ansible_env.HOME}}/miniconda.sh mode=700
 
-    - name: delete miniconda installer
-      command: rm miniconda.sh chdir={{ansible_env.HOME}}
+    - name: install anaconda
+      command: ./miniconda.sh -b -f chdir={{ansible_env.HOME}} creates=miniconda2
 
     - name: source anaconda
       lineinfile: dest={{ansible_env.HOME}}/.bashrc regexp="^export.*miniconda2/bin" line="export PATH={{ansible_env.HOME}}/miniconda2/bin:$PATH"
@@ -58,25 +54,28 @@
         - miniconda2/bin/conda update --yes conda
         - miniconda2/bin/conda install --yes atlas numpy scipy matplotlib nose dateutil pandas flask supervisor tornado
 
+    - name: setup Python dependencies
+      pip: name={{item}} state=present executable={{ansible_env.HOME}}/miniconda2/bin/pip
+      with_items:
+        - telemetry-tools
+        - python_moztelemetry
+        - psycopg2
+        - awscli
+
     - name: get spark
-      get_url: url=http://d3kbcqa49mib13.cloudfront.net/spark-{{spark_version}}-bin-hadoop2.4.tgz dest={{ansible_env.HOME}}/spark.tgz
+      get_url: url=https://d3kbcqa49mib13.cloudfront.net/spark-{{spark_version}}-bin-hadoop2.4.tgz dest={{ansible_env.HOME}}/spark.tgz
 
     - name: install spark
-      unarchive: src={{ansible_env.HOME}}/spark.tgz dest={{ansible_env.HOME}} copy=no
-
-    - name: delete spark installer
-      file: path={{ansible_env.HOME}}/spark.tgz state=absent
+      unarchive: src={{ansible_env.HOME}}/spark.tgz dest={{ansible_env.HOME}} copy=no creates=spark-{{spark_version}}-bin-hadoop2.4
 
     - name: source spark
       lineinfile: >
         dest={{ansible_env.HOME}}/.bashrc
         regexp="^export SPARK_HOME"
         line="export SPARK_HOME={{ansible_env.HOME}}/spark-{{spark_version}}-bin-hadoop2.4"
+
     - name: source pyspark
       lineinfile: >
         dest={{ansible_env.HOME}}/.bashrc
         regexp="^export PYTHONPATH"
         line="export PYTHONPATH=$SPARK_HOME/python:$SPARK_HOME/python/lib/py4j-0.8.2.1-src.zip"
-
-    - name: setup project dependencies
-      command: "{{ansible_env.HOME}}/miniconda2/bin/pip install telemetry-tools python_moztelemetry psycopg2 awscli"
