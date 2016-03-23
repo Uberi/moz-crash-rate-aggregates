@@ -11,7 +11,7 @@ import numpy as np
 
 from moztelemetry.spark import get_pings, get_pings_properties
 
-FRACTION = 0.1
+FRACTION = 0.01
 
 # paths/dimensions within the ping to compare by, in the same format as the second parameter to `get_pings_properties`
 # in https://github.com/mozilla/python_moztelemetry/blob/master/moztelemetry/spark.py
@@ -32,7 +32,7 @@ COMPARABLE_DIMENSIONS = [
 # names of the comparable dimensions above, used as dimension names in the database
 DIMENSION_NAMES = [
     "build_version",
-    "build_id",
+    "build_date",
     "channel",
     "application",
     "os_name",
@@ -58,13 +58,25 @@ def compare_crashes(pings, start_date, end_date, comparable_dimensions, dimensio
         "payload/keyedHistograms/SUBPROCESS_ABNORMAL_ABORT/plugin",
         "payload/keyedHistograms/SUBPROCESS_ABNORMAL_ABORT/gmplugin",
     ], with_processes=True)
+    def is_valid(ping): # sanity check to make sure the ping is actually usable for our purposes
+        return isinstance(ping["meta/submissionDate"], str) and isinstance(ping["creationDate"], str)
     def get_crash_pair(ping): # responsible for normalizing a single ping into a crash pair
-        creation_date = ping["creationDate"]
+        # we need to parse and normalize the dates here rather than at the aggregates level,
+        # because we need to normalize and get rid of the time portion
+        submission_date = datetime.strptime(ping["meta/submissionDate"], "%Y%m%d").date() # convert the YYYYMMDD format to a real date
+        submission_date = max(start_date, min(end_date, submission_date)) # normalize the submission date if it's out of range
+        activity_date = dateutil.parser.parse(ping["creationDate"]).date() # the activity date is the date portion of creationDate
+        activity_date = max(submission_date - timedelta(days=7), min(submission_date, activity_date)) # normalize the activity date if it's out of range
+
+        # get rid of the time portion of the timestamp, since it'll blow up the number of aggregates
+        if isinstance(ping["environment/build/buildId"], str):
+            ping["environment/build/buildId"] = ping["environment/build/buildId"][:8]
+
         return (
             # the keys we want to filter based on
             (
-                ping["meta/submissionDate"], # YYYYMMDD date the ping was submitted
-                creation_date, # ISO8601 date the ping was created by the client
+                submission_date, # date the ping was submitted
+                activity_date, # date the ping was created by the client
             ) + tuple(ping[key] for key in comparable_dimensions), # all the dimensions we can compare by
             # the crash values
             np.array([
@@ -75,15 +87,11 @@ def compare_crashes(pings, start_date, end_date, comparable_dimensions, dimensio
                 (ping["payload/keyedHistograms/SUBPROCESS_ABNORMAL_ABORT/gmplugin_parent"] or 0) # plugin crashes
             ])
         )
-    crash_values = ping_properties.map(get_crash_pair).reduceByKey(lambda a, b: a + b)
+    crash_values = ping_properties.filter(is_valid).map(get_crash_pair).reduceByKey(lambda a, b: a + b)
 
     def dimension_mapping(pair): # responsible for converting aggregate crash pairs into individual dimension fields
         dimension_key = pair[0]
         (submission_date, activity_date), dimension_values = dimension_key[:2], dimension_key[2:]
-        submission_date = datetime.strptime(submission_date, "%Y%m%d").date() # convert the YYYYMMDD format to a real date
-        activity_date = dateutil.parser.parse(activity_date).date() # the activity date is the date portion of creationDate
-        submission_date = max(start_date, min(end_date, submission_date)) # normalize the submission date if it's out of range
-        activity_date = max(start_date - timedelta(days=7), min(end_date, activity_date)) # normalize the activity date if it's out of range
         usage_hours, main_crashes, content_crashes, plugin_crashes = pair[1]
         return (
             submission_date, activity_date,
@@ -122,7 +130,7 @@ def run_job(spark_context, submission_date_range, db_host, db_name, db_user, db_
 
     print("Retrieving pings for {}...".format(submission_date_range))
     pings = retrieve_crash_data(spark_context, submission_date_range, COMPARABLE_DIMENSIONS, FRACTION)
-    print("Retrieved {} pings".format(pings.count()))
+    print("Retrieved about {} pings".format(pings.countApprox(30000, 0.95)))
 
     # useful statements for testing the program
     #import sys, os; sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "test")); import dataset; pings = sc.parallelize(list(dataset.generate_pings())) # use test pings; very good for debugging queries
@@ -179,7 +187,7 @@ def run_job(spark_context, submission_date_range, db_host, db_name, db_user, db_
     RETURNS TRIGGER AS $$
     BEGIN
         EXECUTE format('INSERT INTO %I SELECT $1.*', 'aggregates_partition_' || EXTRACT(YEAR FROM NEW.submission_date) || '_' || EXTRACT(MONTH FROM NEW.submission_date)) USING NEW;
-        RETURN NEW;
+        RETURN NULL;
     END;
     $$ LANGUAGE plpgsql;
 
@@ -207,6 +215,8 @@ def run_job(spark_context, submission_date_range, db_host, db_name, db_user, db_
         if len(row_accumulator) >= INSERT_CHUNK_SIZE: # full chunk obtained, perform insert
             cur.execute("""INSERT INTO aggregates(submission_date, activity_date, dimensions, stats) VALUES {}""".format(",".join(row_accumulator)))
             row_accumulator = []
+        if aggregate_count % 10000 == 0:
+            print("Collecting and updating aggregates... {} processed".format(aggregate_count))
 
     if row_accumulator: # handle any remaining rows that need to be inserted
         cur.execute("""INSERT INTO aggregates(submission_date, activity_date, dimensions, stats) VALUES {}""".format(",".join(row_accumulator)))
@@ -261,7 +271,6 @@ if __name__ == "__main__":
     parser.add_argument("--pg-username", help="Username for the Postgresql database", required=True)
     parser.add_argument("--pg-password", help="Password for the Postgresql database", required=True)
     args = parser.parse_args()
-    args.min_submission_date, args.max_submission_date = "20160301", "20160630"
     submission_date_range = (args.min_submission_date, args.max_submission_date)
     db_host, db_name, db_user, db_pass = args.pg_host, args.pg_name, args.pg_username, args.pg_password
 
