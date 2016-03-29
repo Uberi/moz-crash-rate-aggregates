@@ -29,7 +29,7 @@ Note that within the Vagrant VM, you should use `~/miniconda2/bin/python` as the
 
 To backfill data, just run `crash_rate_aggregates/fill_database.py` with the desired start/end dates as the `--min-submission-date`/`--max-submission-date` arguments. The operation is idempotent and existing aggregates for those dates are overwritten.
 
-To run the tests, execute `PYTHONPATH=.:$PYTHONPATH python -m unittest discover -s test` in the project root directory.
+To run the tests, execute `PYTHONPATH=.:$PYTHONPATH python -m unittest discover -s /vagrant/test` in the Vagrant VM.
 
 To add a new dimension to compare on, add matching entries to `COMPARABLE_DIMENSIONS` and `DIMENSION_NAMES` in `crash_rate_aggregates/fill_database.py`.
 

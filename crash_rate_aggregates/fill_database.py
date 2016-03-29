@@ -59,10 +59,18 @@ def compare_crashes(pings, start_date, end_date, comparable_dimensions, dimensio
         "payload/keyedHistograms/SUBPROCESS_ABNORMAL_ABORT/gmplugin",
     ], with_processes=True)
     def is_valid(ping): # sanity check to make sure the ping is actually usable for our purposes
-        return (
-            (isinstance(ping["meta/submissionDate"], str) or isinstance(ping["meta/submissionDate"], unicode)) and
-            (isinstance(ping["creationDate"], str) or isinstance(ping["creationDate"], unicode))
-        )
+        submission_date = ping["meta/submissionDate"]
+        if not isinstance(submission_date, str) and not isinstance(submission_date, unicode):
+            return False
+        activity_date = ping["creationDate"]
+        if not isinstance(activity_date, str) and not isinstance(activity_date, unicode):
+            return False
+        subsession_length = ping["payload/info/subsessionLength"]
+        if not isinstance(subsession_length, int) and not isinstance(subsession_length, long):
+            if subsession_length <= 0: # don't allow pings that have invalid subsession lengths
+                return False
+        return True
+
     def get_crash_pair(ping): # responsible for normalizing a single ping into a crash pair
         # we need to parse and normalize the dates here rather than at the aggregates level,
         # because we need to normalize and get rid of the time portion
@@ -76,7 +84,7 @@ def compare_crashes(pings, start_date, end_date, comparable_dimensions, dimensio
         activity_date = max(submission_date - timedelta(days=7), min(submission_date, activity_date)) # normalize the activity date if it's out of range
 
         # get rid of the time portion of the timestamp, since it'll blow up the number of aggregates
-        if isinstance(ping["environment/build/buildId"], str):
+        if isinstance(ping["environment/build/buildId"], str) or isinstance(ping["environment/build/buildId"], unicode):
             ping["environment/build/buildId"] = ping["environment/build/buildId"][:8]
 
         return (
@@ -84,7 +92,7 @@ def compare_crashes(pings, start_date, end_date, comparable_dimensions, dimensio
             (submission_date, activity_date) + tuple(ping[key] for key in comparable_dimensions), # all the dimensions we can compare by
             # the crash values
             np.array([
-                max(0, min(25, (ping["payload/info/subsessionLength"] or 0) / 3600.0)), # usage hours
+                min(25, (ping["payload/info/subsessionLength"] or 0) / 3600.0), # usage hours, limited to ~25 hours to keep things normalized
                 int(ping["meta/docType"] == "crash"), # main crash (is a crash ping)
                 ping["payload/keyedHistograms/SUBPROCESS_ABNORMAL_ABORT/content_parent"] or 0, # content process crashes
                 (ping["payload/keyedHistograms/SUBPROCESS_ABNORMAL_ABORT/plugin_parent"] or 0) +
@@ -171,6 +179,7 @@ def run_job(spark_context, submission_date_range, db_host, db_name, db_user, db_
                 CONSTRAINT {table_name}_ck CHECK (submission_date >= DATE '{current_month}' AND submission_date < DATE '{next_month}')
             ) INHERITS (aggregates);
             CREATE INDEX {table_name}_date_idx ON {table_name} (submission_date);
+            CREATE INDEX {table_name}_activity_idx ON {table_name} (activity_date);
             CREATE INDEX {table_name}_dimension_idx ON {table_name} USING gin (dimensions);
         END IF;
         END
