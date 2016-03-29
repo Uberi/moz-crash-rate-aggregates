@@ -13,5 +13,5 @@ install: # set up the environment
 script: # run the tests
   - export SPARK_HOME=$(echo ~/spark-*)
   - export PYTHONPATH=$SPARK_HOME/python:$SPARK_HOME/python/lib/py4j-0.8.2.1-src.zip:$PYTHONPATH
-  - export PYSPARK_PYTHON=~/miniconda2/bin/python
+  - export PYSPARK_PYTHON=~/miniconda2/bin/python # tell Spark which Python executable we're using (this only seems to be necessary for TravisCI, not anywhere else)
   - PYTHONPATH=.:$PYTHONPATH ~/miniconda2/bin/python -m unittest discover -s test
