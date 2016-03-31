@@ -1,7 +1,7 @@
 Crash Rate Aggregates
 =====================
 
-[![Build Status](https://travis-ci.org/Uberi/moz-crash-rate-aggregates.svg?branch=master)](https://travis-ci.org/Uberi/moz-crash-rate-aggregates)
+[![Build Status](https://travis-ci.org/mozilla/moz-crash-rate-aggregates.svg?branch=master)](https://travis-ci.org/Uberi/moz-crash-rate-aggregates)
 
 Scheduled batch job for computing aggregate crash rates across a variety of criteria.
 
