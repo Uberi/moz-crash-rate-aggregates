@@ -51,7 +51,7 @@ class TestStringMethods(unittest.TestCase):
     def test_keys(self):
         for submission_date, activity_date, dimensions, stats in self.crash_rate_aggregates:
             self.assertTrue(re.match("^\d+(?:\.\d+(?:[a-z]\d+)?)?$", dimensions["build_version"]), dimensions["build_version"])
-            self.assertTrue(re.match("^\d{8}$", dimensions["build_date"]), dimensions["build_date"])
+            self.assertTrue(re.match("^\d{14}$", dimensions["build_date"]), dimensions["build_date"])
             self.assertIn(dimensions["channel"], {"nightly", "aurora", "beta", "release"})
             self.assertIn(dimensions["application"], {"Firefox", "Fennec"})
             self.assertIn(dimensions["os_name"], {"Linux", "Windows_NT", "Darwin"})
