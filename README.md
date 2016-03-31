@@ -10,11 +10,78 @@ Scheduled batch job for computing aggregate crash rates across a variety of crit
     * The job takes its needed credentials from the telemetry-spark-emr-2 S3 bucket.
     * Currently, this job is running under :azhang's account every day at 11pm UTC, with the default settings for everything else. The job is named `crash-aggregates`.
 * A large Amazon RDB instance with Postgresql is filled by the analysis job.
-    * Currently, this instance is available at `crash-rate-aggregates.cppmil15uwvg.us-west-2.rds.amazonaws.com:5432`, and credentials are available on S3.
-* The database is meant to be consumed by [re:dash](https://sql.telemetry.mozilla.org/dashboard/general) to make crash rate dashboards.
-    * On the re:dash interface, these aggregates can be used by queries when the query data source is set to "Crash-DB".
-    * The database has one table, `crash_aggregates`, that has all of the dimensions, submission dates, and etc.
-    * For example, you can get the main process crashes per hour on Nightly for March 14, 2016 with `SELECT sum(stats->>'main_crashes') / sum(stats->>'usage_hours') FROM aggregates WHERE dimensions->>'channel' = 'nightly' AND submission_date = '2016-03-14'`.
+    * Currently, this instance is available at `crash-rate-aggregates.cppmil15uwvg.us-west-2.rds.amazonaws.com:5432`, and credentials are available on S3 under `telemetry-spark-emr-2/crash_rate_aggregates_credentials`.
+
+The Database
+------------
+
+The database is meant to be consumed by [re:dash](https://sql.telemetry.mozilla.org/dashboard/general) to make crash rate dashboards.
+
+In the re:dash interface, make a new query, and set the data source to "Crash-DB". Running the query then runs it against the crash aggregates database.
+
+The database has a pretty simple schema:
+
+```sql
+CREATE TABLE IF NOT EXISTS aggregates (
+    id serial PRIMARY KEY,
+    submission_date date NOT NULL,
+    activity_date date NOT NULL,
+    dimensions jsonb,
+    stats jsonb
+);
+```
+
+* Each row represents a single aggregate - a single, disjoint subpopulation, identified by `submission_date`, `activity_date`, and `dimensions`.
+* `submission_date` is the date the pings were received for this aggregate. It's also what we partition the tables based on, so queries that limit this field to a small range will be significantly more efficient.
+* `activity_date` is the date that pings were created for this aggregate, on the client side. This is useful since it's also the time that the measurements in the ping were taken.
+* `dimensions` contains all of the other dimensions we distinguish by:
+    * `dimensions->>'build_version'` is the program version, like `46.0a1`.
+    * `dimensions->>'build_date'` is the YYYYMMDDhhmmss timestamp the program was built, like `20160123180541`.
+    * `dimensions->>'channel'` is the channel, like `release` or `beta`.
+    * `dimensions->>'application'` is the program name, like `Firefox` or `Fennec`.
+    * `dimensions->>'os_name'` is the name of the OS the program is running on, like `Darwin` or `Windows_NT`.
+    * `dimensions->>'os_version'` is the version of the OS the program is running on.
+    * `dimensions->>'architecture'` is the architecture that the program was built for (not necessarily the one it is running on).
+    * `dimensions->>'country'` is the country code for the user (determined using geoIP), like `US` or `UK`.
+    * `dimensions->>'experiment_id'` is the identifier of the experiment being participated in, such as `e10s-beta46-noapz@experiments.mozilla.org`, or null if no experiment.
+    * `dimensions->>'experiment_branch'` is the branch of the experiment being participated in, such as `control` or `experiment`, or null if no experiment.
+    * `dimensions->>'e10s_enabled'` is whether E10S is enabled.
+    * All of the above fields can potentially be null.
+* `stats` contains the aggregate values that we care about:
+    * `stats->>'usage_hours'` is the number of user-hours represented by the aggregate.
+    * `stats->>'main_crashes'` is the number of main process crashes represented by the aggregate (or just program crashes, in the non-E10S case).
+    * `stats->>'content_crashes'` is the number of content process crashes represented by the aggregate.
+    * `stats->>'plugin_crashes'` is the number of plugin process crashes represented by the aggregate.
+
+Plugin process crashes per hour on Nightly for March 14:
+
+```sql
+SELECT sum(stats->>'plugin_crashes') / sum(stats->>'usage_hours') FROM aggregates
+WHERE dimensions->>'channel' = 'nightly' AND submission_date = '2016-03-14'
+```
+
+Main process crashes by date and E10S setting.
+
+```sql
+WITH channel_rates AS (
+  SELECT dimensions->>'build_date' AS build_date,
+         SUM((stats->>'main_crashes')::float) AS main_crashes, -- total number of crashes
+         SUM((stats->>'usage_hours')::float) / 1000 AS usage_kilohours, -- thousand hours of usage
+         dimensions->>'e10s_enabled' AS e10s_enabled -- e10s setting
+   FROM aggregates
+   WHERE (dimensions->>'experiment_id') IS NULL -- not in an experiment
+     AND dimensions->>'build_date' ~ '^\d{14}$' -- validate build IDs
+     AND dimensions->>'build_date' > '20160201000000' -- only in the date range that we care about
+   GROUP BY dimensions->>'build_date', dimensions->>'e10s_enabled'
+)
+SELECT to_date(build_date, 'YYYYMMDDHH24MISS'), -- program build date
+       usage_kilohours, -- thousands of usage hours
+       e10s_enabled, -- e10s setting
+       main_crashes / usage_kilohours AS main_crash_rate -- crash rate being defined as crashes per thousand usage hours
+FROM channel_rates
+WHERE usage_kilohours > 100 -- only aggregates that have statistically significant usage hours
+ORDER BY build_date ASC
+```
 
 Development
 -----------

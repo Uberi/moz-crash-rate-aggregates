@@ -1,4 +1,5 @@
 ansible/crash-rate-aggregates-job.tar.gz
 ansible/crash_rate_aggregates_credentials
 .vagrant/
+.ipynb_checkpoints/
 *.pyc

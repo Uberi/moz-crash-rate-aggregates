@@ -83,10 +83,6 @@ def compare_crashes(pings, start_date, end_date, comparable_dimensions, dimensio
         activity_date = dateutil.parser.parse(ping["creationDate"]).date() # the activity date is the date portion of creationDate
         activity_date = max(submission_date - timedelta(days=7), min(submission_date, activity_date)) # normalize the activity date if it's out of range
 
-        # get rid of the time portion of the timestamp, since it'll blow up the number of aggregates
-        if isinstance(ping["environment/build/buildId"], str) or isinstance(ping["environment/build/buildId"], unicode):
-            ping["environment/build/buildId"] = ping["environment/build/buildId"][:8]
-
         return (
             # the keys we want to filter based on
             (submission_date, activity_date) + tuple(ping[key] for key in comparable_dimensions), # all the dimensions we can compare by
