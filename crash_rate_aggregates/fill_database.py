@@ -95,8 +95,8 @@ def compare_crashes(pings, start_date, end_date, comparable_dimensions, dimensio
                 min(25, (ping["payload/info/subsessionLength"] or 0) / 3600.0), # usage hours, limited to ~25 hours to keep things normalized
                 int(ping["meta/docType"] == "crash"), # main crash (is a crash ping)
                 ping["payload/keyedHistograms/SUBPROCESS_CRASHES_WITH_DUMP/content_parent"] or 0, # content process crashes
-                (ping["payload/keyedHistograms/SUBPROCESS_CRASHES_WITH_DUMP/plugin_parent"] or 0) +
-                (ping["payload/keyedHistograms/SUBPROCESS_CRASHES_WITH_DUMP/gmplugin_parent"] or 0) # plugin crashes
+                (ping["payload/keyedHistograms/SUBPROCESS_CRASHES_WITH_DUMP/plugin_parent"] or 0), # plugin crashes
+                (ping["payload/keyedHistograms/SUBPROCESS_CRASHES_WITH_DUMP/gmplugin_parent"] or 0), # GMplugin crashes
             ])
         )
     crash_values = ping_properties.filter(is_valid).map(get_crash_pair).reduceByKey(lambda a, b: a + b)
@@ -104,7 +104,7 @@ def compare_crashes(pings, start_date, end_date, comparable_dimensions, dimensio
     def dimension_mapping(pair): # responsible for converting aggregate crash pairs into individual dimension fields
         dimension_key = pair[0]
         (submission_date, activity_date), dimension_values = dimension_key[:2], dimension_key[2:]
-        usage_hours, main_crashes, content_crashes, plugin_crashes = pair[1]
+        usage_hours, main_crashes, content_crashes, plugin_crashes, gmplugin_crashes = pair[1]
         return (
             submission_date, activity_date,
             {
@@ -116,6 +116,7 @@ def compare_crashes(pings, start_date, end_date, comparable_dimensions, dimensio
                 "main_crashes": float(main_crashes),
                 "content_crashes": float(content_crashes),
                 "plugin_crashes": float(plugin_crashes),
+                "gmplugin_crashes": float(gmplugin_crashes),
             },
         )
     return crash_values.map(dimension_mapping)
@@ -148,7 +149,6 @@ def run_job(spark_context, sql_context, submission_date_range):
     ])
 
     current_date = start_date
-    total_aggregates = 0
     while current_date <= end_date:
         # useful statements for testing the program
         #import sys, os; sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "test")); import dataset; pings = sc.parallelize(list(dataset.generate_pings())) # use test pings; very good for debugging queries
@@ -156,9 +156,7 @@ def run_job(spark_context, sql_context, submission_date_range):
         pings = retrieve_crash_data(spark_context, current_date.strftime("%Y%m%d"), COMPARABLE_DIMENSIONS, FRACTION)
         result = compare_crashes(pings, current_date, current_date, COMPARABLE_DIMENSIONS, DIMENSION_NAMES).coalesce(1)
         df = sql_context.createDataFrame(result, schema)
-        aggregate_count = df.count()
-        total_aggregates += aggregate_count
-        print("SUCCESSFULLY COMPUTED {} CRASH AGGREGATES FOR {}".format(aggregate_count, current_date))
+        print("SUCCESSFULLY COMPUTED CRASH AGGREGATES FOR {}".format(current_date))
 
         # upload the dataframe as Parquet to S3
         s3_result_url = "s3n://telemetry-test-bucket/crash-aggregates/v1/submission_date={}".format(current_date)
@@ -170,7 +168,6 @@ def run_job(spark_context, sql_context, submission_date_range):
 
     print("========================================")
     print("JOB COMPLETED SUCCESSFULLY")
-    print("created {} aggregates".format(total_aggregates))
     print("========================================")
 
 if __name__ == "__main__":
