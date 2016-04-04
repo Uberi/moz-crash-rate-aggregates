@@ -11,6 +11,8 @@ import numpy as np
 
 from moztelemetry.spark import get_pings, get_pings_properties
 
+import pyspark.sql.types as types
+
 FRACTION = 0.1
 
 # paths/dimensions within the ping to compare by, in the same format as the second parameter to `get_pings_properties`
@@ -106,14 +108,14 @@ def compare_crashes(pings, start_date, end_date, comparable_dimensions, dimensio
         return (
             submission_date, activity_date,
             {
-                key: dimension_value
+                key: str(dimension_value)
                 for key, dimension_value in zip(dimension_names, dimension_values)
             },
             {
-                "usage_hours": usage_hours,
-                "main_crashes": main_crashes,
-                "content_crashes": content_crashes,
-                "plugin_crashes": plugin_crashes,
+                "usage_hours": float(usage_hours),
+                "main_crashes": float(main_crashes),
+                "content_crashes": float(content_crashes),
+                "plugin_crashes": float(plugin_crashes),
             },
         )
     return crash_values.map(dimension_mapping)
@@ -133,132 +135,42 @@ def retrieve_crash_data(sc, submission_date_range, comparable_dimensions, fracti
 
     return normal_pings.union(crash_pings)
 
-def run_job(spark_context, submission_date_range, db_host, db_name, db_user, db_pass):
+def run_job(spark_context, sql_context, submission_date_range):
     """Fill the specified database with crash aggregates for the specified submission date range, creating the schema if needed."""
     start_date = datetime.strptime(submission_date_range[0], "%Y%m%d").date()
     end_date = datetime.strptime(submission_date_range[1], "%Y%m%d").date()
 
-    print("Retrieving pings for {}...".format(submission_date_range))
-    pings = retrieve_crash_data(spark_context, submission_date_range, COMPARABLE_DIMENSIONS, FRACTION)
+    schema = types.StructType([
+        types.StructField("submission_date", types.DateType(),                                        nullable=False),
+        types.StructField("activity_date",   types.DateType(),                                        nullable=False),
+        types.StructField("dimensions",      types.MapType(types.StringType(), types.StringType(), True), nullable=False),
+        types.StructField("stats",           types.MapType(types.StringType(), types.DoubleType(), True), nullable=False),
+    ])
 
-    # useful statements for testing the program
-    #import sys, os; sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "test")); import dataset; pings = sc.parallelize(list(dataset.generate_pings())) # use test pings; very good for debugging queries
+    current_date = start_date
+    total_aggregates = 0
+    while current_date <= end_date:
+        # useful statements for testing the program
+        import sys, os; sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "test")); import dataset; pings = sc.parallelize(list(dataset.generate_pings())) # use test pings; very good for debugging queries
 
-    # compare crashes by all of the above dimensions
-    print("Comparing crashes along dimensions {}...".format(DIMENSION_NAMES))
-    result = compare_crashes(pings, start_date, end_date, COMPARABLE_DIMENSIONS, DIMENSION_NAMES)
+        #pings = retrieve_crash_data(spark_context, current_date.strftime("%Y%m%d"), COMPARABLE_DIMENSIONS, FRACTION)
+        result = compare_crashes(pings, current_date, current_date, COMPARABLE_DIMENSIONS, DIMENSION_NAMES)
+        df = sql_context.createDataFrame(result, schema)
+        aggregate_count = df.count()
+        total_aggregates += aggregate_count
+        print("SUCCESSFULLY COMPUTED {} CRASH AGGREGATES FOR {}".format(aggregate_count, current_date))
 
-    conn = psycopg2.connect(host=db_host, database=db_name, user=db_user, password=db_pass)
-    cur = conn.cursor()
+        # upload the dataframe as Parquet to S3
+        s3_result_url = "s3n://telemetry-test-bucket/crash-aggregates/crashes[submission_date={}].parquet".format(current_date)
+        df.saveAsParquetFile(s3_result_url)
 
-    print("Setting up database...")
+        print("SUCCESSFULLY UPLOADED CRASH AGGREGATES FOR {} TO S3".format(current_date))
 
-    cur.execute("""
-    CREATE TABLE IF NOT EXISTS aggregates (
-        id serial PRIMARY KEY,
-        submission_date date NOT NULL,
-        activity_date date NOT NULL,
-        dimensions jsonb,
-        stats jsonb
-    );
-    """)
-
-    # create child tables that inherit from `aggregates`; these partition the data by month for faster querying
-    # when running queries, we can still select from `aggregates`; the query will use the child tables as needed
-    current_month = date(start_date.year, start_date.month, 1)
-    while current_month <= end_date: # loop through the month range
-        next_month = date(current_month.year, (current_month.month % 12) + 1, 1)
-        cur.execute("""
-        DO $$
-        BEGIN
-        IF NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = '{table_name}') THEN
-            CREATE TABLE {table_name} (
-                CONSTRAINT {table_name}_pk PRIMARY KEY (id),
-                CONSTRAINT {table_name}_ck CHECK (submission_date >= DATE '{current_month}' AND submission_date < DATE '{next_month}')
-            ) INHERITS (aggregates);
-            CREATE INDEX {table_name}_date_idx ON {table_name} (submission_date);
-            CREATE INDEX {table_name}_activity_idx ON {table_name} (activity_date);
-            CREATE INDEX {table_name}_dimension_idx ON {table_name} USING gin (dimensions);
-        END IF;
-        END
-        $$
-        """.format(
-            table_name="aggregates_partition_{}_{}".format(current_month.year, current_month.month),
-            current_month=datetime.strftime(current_month, "%Y-%m-%d"),
-            next_month=datetime.strftime(next_month, "%Y-%m-%d"),
-        ))
-        current_month = next_month
-
-    # when we attempt to insert or delete into `aggregates`, redirect it to the proper child table instead
-    # the child table will only store a month's worth of data (~3000000 rows), so queries that only need
-    # a specific submission date range will have much less to look through
-    cur.execute("""
-    CREATE OR REPLACE FUNCTION aggregates_insert_trigger()
-    RETURNS TRIGGER AS $$
-    BEGIN
-        EXECUTE format('INSERT INTO %I SELECT $1.*', 'aggregates_partition_' || EXTRACT(YEAR FROM NEW.submission_date) || '_' || EXTRACT(MONTH FROM NEW.submission_date)) USING NEW;
-        RETURN NULL;
-    END;
-    $$ LANGUAGE plpgsql;
-
-    DROP TRIGGER IF EXISTS insert_aggregates_trigger ON aggregates;
-    CREATE TRIGGER insert_aggregates_trigger BEFORE INSERT ON aggregates FOR EACH ROW EXECUTE PROCEDURE aggregates_insert_trigger();
-    """)
-
-    # remove previous data for the selected days, if available
-    # this is necessary to be able to backfill data properly
-    cur.execute("""DELETE FROM aggregates WHERE submission_date >= %s and submission_date <= %s""", (start_date, end_date))
-    print("Removed {} existing aggregates for the submission date range {} to {}".format(cur.rowcount, start_date, end_date))
-
-    print("Collecting and updating aggregates...")
-
-    row_accumulator = [] # do inserts in large chunks for a significantly faster insertion operation while allowing for larger-than-RAM datasets
-    aggregate_count = 0
-    for submission_date, activity_date, dimensions, crash_data in result.toLocalIterator():
-        aggregate_count += 1 # doing this is actually faster than using result.count()
-        row_accumulator.append(cur.mogrify("(%s, %s, %s, %s)", (
-            submission_date,
-            activity_date,
-            extras.Json(dimensions),
-            extras.Json(crash_data),
-        )))
-        if len(row_accumulator) >= INSERT_CHUNK_SIZE: # full chunk obtained, perform insert
-            cur.execute("""INSERT INTO aggregates(submission_date, activity_date, dimensions, stats) VALUES {}""".format(",".join(row_accumulator)))
-            row_accumulator = []
-        if aggregate_count % 10000 == 0:
-            print("Collecting and updating aggregates... {} processed".format(aggregate_count))
-
-    if row_accumulator: # handle any remaining rows that need to be inserted
-        cur.execute("""INSERT INTO aggregates(submission_date, activity_date, dimensions, stats) VALUES {}""".format(",".join(row_accumulator)))
-
-    conn.commit()
-    cur.close()
-    conn.close()
+        current_date += timedelta(days=1)
 
     print("========================================")
     print("JOB COMPLETED SUCCESSFULLY")
-    print("inserted {} aggregates".format(aggregate_count))
-    print("========================================")
-
-def cleanup_old_tables(db_host, db_name, db_user, db_pass):
-    """Drops partitions of the `aggregates` table that are older than 26 weeks."""
-    conn = psycopg2.connect(host=db_host, database=db_name, user=db_user, password=db_pass)
-    cur = conn.cursor()
-
-    cur.execute("""SELECT relname FROM pg_class WHERE relkind = 'r' AND relname ~ '^(aggregates_partition_)';""")
-    table_drop_count = 0
-    for table_name, in cur:
-        match = re.match("^aggregates_partition_(\d+)_(\d+)$", table_name)
-        year, month = int(match.group(1)), int(match.group(2))
-        weeks_since_partition_first_day = (date.today() - date(year, month, 1)).days / 7
-        if weeks_since_partition_first_day > 26:
-            print("Dropping table {} since it holds data older than 26 weeks.")
-            table_drop_count += 1
-            cur.execute("""DROP TABLE {};""".format(table_name))
-
-    print("========================================")
-    print("OLD TABLES CLEANED SUCCESSFULLY")
-    print("dropped {} tables".format(table_drop_count))
+    print("created {} aggregates".format(total_aggregates))
     print("========================================")
 
 if __name__ == "__main__":
@@ -271,21 +183,16 @@ if __name__ == "__main__":
         print "SPARK_HOME not set"
         sys.exit(1)
     from pyspark import SparkContext
+    from pyspark.sql import SQLContext
 
     yesterday_utc = (datetime.utcnow() - timedelta(days=1)).strftime("%Y%m%d")
     parser = argparse.ArgumentParser(description="Fill a Postgresql database with crash rate aggregates for a certain date range.")
     parser.add_argument("--min-submission-date", help="Earliest date to include in the aggregate calculation in YYYYMMDD format (defaults to the current UTC date)", default=yesterday_utc)
     parser.add_argument("--max-submission-date", help="Latest date to include in the aggregate calculation in YYYYMMDD format (defaults to yesterday's UTC date)", default=yesterday_utc)
-    parser.add_argument("--pg-host", help="Host/address of the Postgresql database", required=True)
-    parser.add_argument("--pg-name", help="Name of the Postgresql database", required=True)
-    parser.add_argument("--pg-username", help="Username for the Postgresql database", required=True)
-    parser.add_argument("--pg-password", help="Password for the Postgresql database", required=True)
     args = parser.parse_args()
     submission_date_range = (args.min_submission_date, args.max_submission_date)
-    db_host, db_name, db_user, db_pass = args.pg_host, args.pg_name, args.pg_username, args.pg_password
-
-    cleanup_old_tables(db_host, db_name, db_user, db_pass)
 
     sc = SparkContext()
+    sqlContext = SQLContext(sc)
     #sc = SparkContext(master="local[1]") # run sequentially with only 1 worker (useful for debugging)
-    run_job(sc, submission_date_range, db_host, db_name, db_user, db_pass)
+    run_job(sc, sqlContext, submission_date_range)
