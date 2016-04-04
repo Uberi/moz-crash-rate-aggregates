@@ -54,9 +54,9 @@ def compare_crashes(pings, start_date, end_date, comparable_dimensions, dimensio
         "creationDate",
         "payload/info/subsessionLength",
         "meta/docType",
-        "payload/keyedHistograms/SUBPROCESS_ABNORMAL_ABORT/content",
-        "payload/keyedHistograms/SUBPROCESS_ABNORMAL_ABORT/plugin",
-        "payload/keyedHistograms/SUBPROCESS_ABNORMAL_ABORT/gmplugin",
+        "payload/keyedHistograms/SUBPROCESS_CRASHES_WITH_DUMP/content",
+        "payload/keyedHistograms/SUBPROCESS_CRASHES_WITH_DUMP/plugin",
+        "payload/keyedHistograms/SUBPROCESS_CRASHES_WITH_DUMP/gmplugin",
     ], with_processes=True)
     def is_valid(ping): # sanity check to make sure the ping is actually usable for our purposes
         submission_date = ping["meta/submissionDate"]
@@ -66,9 +66,8 @@ def compare_crashes(pings, start_date, end_date, comparable_dimensions, dimensio
         if not isinstance(activity_date, str) and not isinstance(activity_date, unicode):
             return False
         subsession_length = ping["payload/info/subsessionLength"]
-        if not isinstance(subsession_length, int) and not isinstance(subsession_length, long):
-            if subsession_length <= 0: # don't allow pings that have invalid subsession lengths
-                return False
+        if subsession_length is not None and not isinstance(subsession_length, int) and not isinstance(subsession_length, long):
+            return False
         return True
 
     def get_crash_pair(ping): # responsible for normalizing a single ping into a crash pair
@@ -80,7 +79,10 @@ def compare_crashes(pings, start_date, end_date, comparable_dimensions, dimensio
         submission_date = max(start_date, min(end_date, submission_date)) # normalize the submission date if it's out of range
 
         # date the ping was created on the client
-        activity_date = dateutil.parser.parse(ping["creationDate"]).date() # the activity date is the date portion of creationDate
+        try:
+            activity_date = dateutil.parser.parse(ping["creationDate"]).date() # the activity date is the date portion of creationDate
+        except: # malformed date, like how sometimes seconds that are not in [0, 59]
+            activity_date = submission_date # we'll just set it to the submission date, since we can't parse the activity date
         activity_date = max(submission_date - timedelta(days=7), min(submission_date, activity_date)) # normalize the activity date if it's out of range
 
         return (
@@ -90,9 +92,9 @@ def compare_crashes(pings, start_date, end_date, comparable_dimensions, dimensio
             np.array([
                 min(25, (ping["payload/info/subsessionLength"] or 0) / 3600.0), # usage hours, limited to ~25 hours to keep things normalized
                 int(ping["meta/docType"] == "crash"), # main crash (is a crash ping)
-                ping["payload/keyedHistograms/SUBPROCESS_ABNORMAL_ABORT/content_parent"] or 0, # content process crashes
-                (ping["payload/keyedHistograms/SUBPROCESS_ABNORMAL_ABORT/plugin_parent"] or 0) +
-                (ping["payload/keyedHistograms/SUBPROCESS_ABNORMAL_ABORT/gmplugin_parent"] or 0) # plugin crashes
+                ping["payload/keyedHistograms/SUBPROCESS_CRASHES_WITH_DUMP/content_parent"] or 0, # content process crashes
+                (ping["payload/keyedHistograms/SUBPROCESS_CRASHES_WITH_DUMP/plugin_parent"] or 0) +
+                (ping["payload/keyedHistograms/SUBPROCESS_CRASHES_WITH_DUMP/gmplugin_parent"] or 0) # plugin crashes
             ])
         )
     crash_values = ping_properties.filter(is_valid).map(get_crash_pair).reduceByKey(lambda a, b: a + b)
