@@ -13,7 +13,7 @@ from moztelemetry.spark import get_pings, get_pings_properties
 
 import pyspark.sql.types as types
 
-FRACTION = 0.1
+FRACTION = 1.0
 
 # paths/dimensions within the ping to compare by, in the same format as the second parameter to `get_pings_properties`
 # in https://github.com/mozilla/python_moztelemetry/blob/master/moztelemetry/spark.py
