@@ -154,14 +154,14 @@ def run_job(spark_context, sql_context, submission_date_range):
         #import sys, os; sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "test")); import dataset; pings = sc.parallelize(list(dataset.generate_pings())) # use test pings; very good for debugging queries
 
         pings = retrieve_crash_data(spark_context, current_date.strftime("%Y%m%d"), COMPARABLE_DIMENSIONS, FRACTION)
-        result = compare_crashes(pings, current_date, current_date, COMPARABLE_DIMENSIONS, DIMENSION_NAMES)
+        result = compare_crashes(pings, current_date, current_date, COMPARABLE_DIMENSIONS, DIMENSION_NAMES).coalesce(1)
         df = sql_context.createDataFrame(result, schema)
         aggregate_count = df.count()
         total_aggregates += aggregate_count
         print("SUCCESSFULLY COMPUTED {} CRASH AGGREGATES FOR {}".format(aggregate_count, current_date))
 
         # upload the dataframe as Parquet to S3
-        s3_result_url = "s3n://telemetry-test-bucket/crash-aggregates/crashes[submission_date={}].parquet".format(current_date)
+        s3_result_url = "s3n://telemetry-test-bucket/crash-aggregates/v1/submission_date={}".format(current_date)
         df.saveAsParquetFile(s3_result_url)
 
         print("SUCCESSFULLY UPLOADED CRASH AGGREGATES FOR {} TO S3".format(current_date))
