@@ -46,7 +46,7 @@ The `crash_aggregates` table has 4 commonly-used columns:
 * `activity_date` is the date pings were generated on the client for a particular aggregate.
     * For example, `select sum(stats['usage_hours']) from crash_aggregates where activity_date = '2016-03-15'` will give the total number of user hours represented by pings generated on March 15, 2016.
     * This can be several days before the pings are actually submitted, so it will always be before or on its corresponding `submission_date`.
-    * Therefore, queries that are sensitive to when measurements were taken on the client should prefer this field over `submission_date`
+    * Therefore, queries that are sensitive to when measurements were taken on the client should prefer this field over `submission_date`.
 * `dimensions` is a map of all the other dimensions that we currently care about. These fields include:
     * `dimensions['build_version']` is the program version, like `46.0a1`.
     * `dimensions['build_date']` is the YYYYMMDDhhmmss timestamp the program was built, like `20160123180541`. This is also known as the "build ID" or "buildid".
@@ -65,7 +65,7 @@ The `crash_aggregates` table has 4 commonly-used columns:
     * `stats['main_crashes']` is the number of main process crashes represented by the aggregate (or just program crashes, in the non-E10S case).
     * `stats['content_crashes']` is the number of content process crashes represented by the aggregate.
     * `stats['plugin_crashes']` is the number of plugin process crashes represented by the aggregate.
-    * `stats['gmplugin_crashes']` is the number of Gecko media plugin process crashes represented by the aggregate.
+    * `stats['gmplugin_crashes']` is the number of Gecko media plugin (often abbreviated GMPlugin) process crashes represented by the aggregate.
 
 Plugin process crashes per hour on Nightly for March 14:
 
@@ -100,15 +100,15 @@ ORDER BY build_date ASC
 Development
 -----------
 
-This project uses [Vagrant](https://www.vagrantup.com/) for setting up the development environment, and [Ansible](https://www.ansible.com/) for automation. You can install these pretty easily with `sudo apt-get install vagrant ansible` on Debian-derivatives.
+This project uses [Vagrant](https://www.vagrantup.com/) for setting up the development environment, and [Ansible](https://www.ansible.com/) for automation. You can install these pretty easily with `sudo apt-get install vagrant ansible` on Debian-derivative Linux distributions.
 
-To set up a development environment, simply run `vagrant up` and then `vagrant ssh` in the project root folder. This will open a terminal within the Vagrant VM. Do `cd /vagrant` to get to the project folder within the VM.
+To set up a development environment, simply run `vagrant up` and then `vagrant ssh` in the project root folder. This will set up a development environment inside a virtual machine and SSH into it. Do `cd /vagrant` to get to the project folder within the VM.
 
 To set up the environment locally on Ubuntu 14.04 LTS, simply run `sudo ansible-playbook -i ansible/inventory/localhost.ini ansible/dev.yml`.
 
 Note that within the Vagrant VM, you should use `~/miniconda2/bin/python` as the main Python binary. All the packages are installed for Miniconda's Python rather than the system Python.
 
-To backfill data, just run `crash_rate_aggregates/fill_database.py` with the desired start/end dates as the `--min-submission-date`/`--max-submission-date` arguments. The operation is idempotent and existing aggregates for those dates are overwritten.
+To backfill data, just run `crash_rate_aggregates/fill_database.py` with the desired start/end dates as the `--min-submission-date`/`--max-submission-date` arguments.
 
 To run the tests, execute `PYTHONPATH=.:$PYTHONPATH python -m unittest discover -s /vagrant/test` in the Vagrant VM.
 
@@ -125,6 +125,5 @@ When running in the Telemetry Analysis Environment, debugging can be a pain. The
 Deployment
 ----------
 
-1. Install [Ansible Playbook](http://docs.ansible.com/ansible/playbooks.html) and Boto: `sudo apt-get install software-properties-common python-boto; sudo apt-add-repository ppa:ansible/ansible; sudo apt-get update; sudo apt-get install ansible`.
-2. Run `ansible-playbook ansible/deploy.yml` to set up the RDB instance on AWS.
-3. Set up the scheduled Spark analysis on the [Telemetry analysis service](https://analysis.telemetry.mozilla.org/cluster/schedule) to run daily, using the `run_fill_database.ipynb` Jupyter notebook.
+1. Install [Ansible Playbook](http://docs.ansible.com/ansible/playbooks.html): `sudo apt-get install ansible`.
+2. Set up the scheduled Spark analysis on the [Telemetry analysis service](https://analysis.telemetry.mozilla.org/cluster/schedule) to run daily, using the `run_fill_database.ipynb` Jupyter notebook.
