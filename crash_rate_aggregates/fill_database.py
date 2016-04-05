@@ -142,8 +142,7 @@ def run_job(spark_context, sql_context, submission_date_range):
     end_date = datetime.strptime(submission_date_range[1], "%Y%m%d").date()
 
     schema = types.StructType([
-        types.StructField("submission_date", types.DateType(),                                        nullable=False),
-        types.StructField("activity_date",   types.DateType(),                                        nullable=False),
+        types.StructField("activity_date",   types.DateType(),                                            nullable=False),
         types.StructField("dimensions",      types.MapType(types.StringType(), types.StringType(), True), nullable=False),
         types.StructField("stats",           types.MapType(types.StringType(), types.DoubleType(), True), nullable=False),
     ])
@@ -159,7 +158,7 @@ def run_job(spark_context, sql_context, submission_date_range):
         print("SUCCESSFULLY COMPUTED CRASH AGGREGATES FOR {}".format(current_date))
 
         # upload the dataframe as Parquet to S3
-        s3_result_url = "s3n://telemetry-test-bucket/crash-aggregates/v1/submission_date={}".format(current_date)
+        s3_result_url = "s3n://telemetry-test-bucket/crash_aggregates/v1/submission_date={}".format(current_date)
         df.saveAsParquetFile(s3_result_url)
 
         print("SUCCESSFULLY UPLOADED CRASH AGGREGATES FOR {} TO S3".format(current_date))
