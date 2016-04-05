@@ -67,7 +67,8 @@ class TestStringMethods(unittest.TestCase):
             self.assertEqual(stats["usage_hours"], 42 * 2 / 3600.0)
             self.assertEqual(stats["main_crashes"], 1)
             self.assertEqual(stats["content_crashes"], 42 * 2)
-            self.assertEqual(stats["plugin_crashes"], 42 * 4)
+            self.assertEqual(stats["plugin_crashes"], 42 * 2)
+            self.assertEqual(stats["gmplugin_crashes"], 42 * 2)
 
 if __name__ == '__main__':
     unittest.main()
