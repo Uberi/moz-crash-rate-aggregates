@@ -3,7 +3,6 @@
 
   vars:
     - spark_version: 1.3.1
-    - postgresql_version: 9.4
 
   tasks:
     - name: install packages
@@ -21,23 +20,6 @@
     - name: get the current release codename for adding apt repositories
       shell: "lsb_release -cs"
       register: codename
-
-    - name: add apt repository for postgresql
-      sudo: yes
-      apt_repository: repo="deb http://apt.postgresql.org/pub/repos/apt/ {{ codename.stdout }}-pgdg main" state=present
-
-    - name: trust the postgresql apt repository signing key
-      sudo: yes
-      apt_key: id=ACCC4CF8 url=https://www.postgresql.org/media/keys/ACCC4CF8.asc state=present
-
-    - name: install postgresql packages
-      sudo: yes
-      apt: name={{item}} state=installed update_cache=yes cache_valid_time=3600
-      with_items:
-        - libpq-dev
-        - postgresql-{{postgresql_version}}
-        - postgresql-contrib-{{postgresql_version}}
-        - postgresql-server-dev-{{postgresql_version}}
 
     # we have to use wget here instead of the built in Ansible get_url module
     # because Python versions before 2.7.9 don't support SNI, which is needed
@@ -63,7 +45,6 @@
       with_items:
         - telemetry-tools
         - python_moztelemetry
-        - psycopg2
         - awscli
 
     # we have to use wget here instead of the built in Ansible get_url module

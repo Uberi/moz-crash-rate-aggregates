@@ -5,8 +5,6 @@ import sys
 from datetime import datetime, date, timedelta
 import dateutil.parser
 
-import psycopg2
-from psycopg2 import extras
 import numpy as np
 
 from moztelemetry.spark import get_pings, get_pings_properties
