@@ -108,7 +108,7 @@ def compare_crashes(pings, start_date, end_date, comparable_dimensions, dimensio
         return (
             submission_date, activity_date,
             {
-                key: str(dimension_value)
+                key: str(dimension_value) if dimension_value is not None else ""
                 for key, dimension_value in zip(dimension_names, dimension_values)
             },
             {

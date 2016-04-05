@@ -90,7 +90,7 @@ def generate_payload(dimensions): #wip: country field
             },
         },
         u"keyedHistograms": {
-            u'SUBPROCESS_ABNORMAL_ABORT': {
+            u'SUBPROCESS_CRASHES_WITH_DUMP': {
                 u'content': {
                     u'bucket_count': 3,
                     u'histogram_type': 4,

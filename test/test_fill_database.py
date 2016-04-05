@@ -58,9 +58,9 @@ class TestStringMethods(unittest.TestCase):
             self.assertTrue(re.match("^[\d\.]+$", dimensions["os_version"]), dimensions["os_version"])
             self.assertTrue(re.match("^[\w-]+$", dimensions["architecture"]), dimensions["architecture"])
             self.assertTrue(re.match("^[\w-]+$", dimensions["architecture"]), dimensions["country"])
-            self.assertTrue(dimensions["experiment_id"] is None or "@" in dimensions["experiment_id"], dimensions["experiment_id"])
+            self.assertTrue(dimensions["experiment_id"] == "" or "@" in dimensions["experiment_id"], dimensions["experiment_id"])
             self.assertTrue(re.match("^[\w-]+$", dimensions["experiment_branch"]), dimensions["experiment_branch"])
-            self.assertTrue(isinstance(dimensions["e10s_enabled"], bool), dimensions["e10s_enabled"])
+            self.assertTrue(isinstance(dimensions["e10s_enabled"], str), dimensions["e10s_enabled"])
 
     def test_crash_rates(self):
         for submission_date, activity_date, dimensions, stats in self.crash_rate_aggregates:
