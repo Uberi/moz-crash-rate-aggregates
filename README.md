@@ -7,74 +7,88 @@ Scheduled batch job for computing aggregate crash rates across a variety of crit
 
 * A Spark analysis runs daily using a [scheduled analysis job](https://analysis.telemetry.mozilla.org/cluster/schedule).
     * The job, `crash-aggregates`, runs the `run_fill_database.ipynb` Jupyter notebook, which downloads, installs, and runs the crash-rate-aggregates on the cluster.
-    * The job takes its needed credentials from the telemetry-spark-emr-2 S3 bucket.
-    * Currently, this job is running under :azhang's account every day at 11pm UTC, with the default settings for everything else. The job is named `crash-aggregates`.
-* A large Amazon RDB instance with Postgresql is filled by the analysis job.
-    * Currently, this instance is available at `crash-rate-aggregates.cppmil15uwvg.us-west-2.rds.amazonaws.com:5432`, and credentials are available on S3 under `telemetry-spark-emr-2/crash_rate_aggregates_credentials`.
+    * Currently, this job is running under :azhang's account every day at 1am UTC, with the default settings for everything else. The job is named `crash-aggregates`.
+* The job uploads the resulting data to S3, under prefixes of the form `crash-aggregates/v1/submission_date=(YYYY-MM-DD SUBMISSION DATE)/` in the `telemetry-test-bucket` bucket.
+    * Each of these prefixes is called a partition. There is a partition for each submission date.
+* We have [Presto](https://prestodb.io/) set up to query the data on S3 using Presto's SQL query engine.
+    * Currently, this instance is available at `ec2-54-218-5-112.us-west-2.compute.amazonaws.com`. The [provisioning files for the Presto instance](https://github.com/vitillo/emr-bootstrap-presto) are available as well.
+    * At the moment, new partitions must be imported using [parquet2hive](https://github.com/vitillo/parquet2hive). There's a temporary cron job set up on the instance to do the importing, which will [eventually be replaced with something better](https://bugzilla.mozilla.org/show_bug.cgi?id=1251648).
+* The [re:dash](https://sql.telemetry.mozilla.org/dashboard/general) setup connects to Presto and allows users to make SQL queries, build dashboards, etc. with the crash aggregates data.
 
-The Database
-------------
+Schemas and Making Queries
+--------------------------
 
-The database is meant to be consumed by [re:dash](https://sql.telemetry.mozilla.org/dashboard/general) to make crash rate dashboards.
+In the re:dash interface, make a new query, and set the data source to "Presto" if it isn't already. Now, we can make queries against the `crash_aggregates` table, which contains all of our crash data.
 
-In the re:dash interface, make a new query, and set the data source to "Crash-DB". Running the query then runs it against the crash aggregates database.
-
-The database has a pretty simple schema:
+A query that computes crash rates for each channel (sorted by number of usage hours) would look like this:
 
 ```sql
-CREATE TABLE IF NOT EXISTS aggregates (
-    id serial PRIMARY KEY,
-    submission_date date NOT NULL,
-    activity_date date NOT NULL,
-    dimensions jsonb,
-    stats jsonb
-);
+SELECT dimensions['channel'] AS channel,
+       sum(stats['usage_hours']) AS usage_hours,
+       1000 * sum(stats['main_crashes']) / sum(cast(stats['usage_hours'] AS DOUBLE)) AS main_crash_rate,
+       1000 * sum(stats['content_crashes']) / sum(cast(stats['usage_hours'] AS DOUBLE)) AS content_crash_rate,
+       1000 * sum(stats['plugin_crashes']) / sum(cast(stats['usage_hours'] AS DOUBLE)) AS plugin_crash_rate,
+       1000 * sum(stats['gmplugin_crashes']) / sum(cast(stats['usage_hours'] AS DOUBLE)) AS gmplugin_crash_rate
+FROM crash_aggregates
+GROUP BY dimensions['channel']
+ORDER BY -sum(cast(stats['usage_hours'] AS DOUBLE))
 ```
 
-* Each row represents a single aggregate - a single, disjoint subpopulation, identified by `submission_date`, `activity_date`, and `dimensions`.
-* `submission_date` is the date the pings were received for this aggregate. It's also what we partition the tables based on, so queries that limit this field to a small range will be significantly more efficient.
-* `activity_date` is the date that pings were created for this aggregate, on the client side. This is useful since it's also the time that the measurements in the ping were taken.
-* `dimensions` contains all of the other dimensions we distinguish by:
-    * `dimensions->>'build_version'` is the program version, like `46.0a1`.
-    * `dimensions->>'build_date'` is the YYYYMMDDhhmmss timestamp the program was built, like `20160123180541`.
-    * `dimensions->>'channel'` is the channel, like `release` or `beta`.
-    * `dimensions->>'application'` is the program name, like `Firefox` or `Fennec`.
-    * `dimensions->>'os_name'` is the name of the OS the program is running on, like `Darwin` or `Windows_NT`.
-    * `dimensions->>'os_version'` is the version of the OS the program is running on.
-    * `dimensions->>'architecture'` is the architecture that the program was built for (not necessarily the one it is running on).
-    * `dimensions->>'country'` is the country code for the user (determined using geoIP), like `US` or `UK`.
-    * `dimensions->>'experiment_id'` is the identifier of the experiment being participated in, such as `e10s-beta46-noapz@experiments.mozilla.org`, or null if no experiment.
-    * `dimensions->>'experiment_branch'` is the branch of the experiment being participated in, such as `control` or `experiment`, or null if no experiment.
-    * `dimensions->>'e10s_enabled'` is whether E10S is enabled.
-    * All of the above fields can potentially be null.
+An aggregate in this context is a combined collection of Telemetry pings. An aggregate for Windows 7 64-bit Firefox on March 15, 2016 represents the stats for all pings that originate from Windows 7 64-bit Firefox, on March 15, 2016. Aggregates represent all the pings that meet that aggregate's criteria. The subpopulations represented by individual aggregates are always disjoint.
+
+Presto has its own SQL engine, and therefore its own extensions to standard SQL. The SQL that Presto uses is documented [here](https://prestodb.io/docs/current/).
+
+The `crash_aggregates` table has 4 commonly-used columns:
+
+* `submission_date` is the date pings were submitted for a particular aggregate.
+    * For example, `select sum(stats['usage_hours']) from crash_aggregates where submission_date = '2016-03-15'` will give the total number of user hours represented by pings submitted on March 15, 2016.
+    * The dataset is partitioned by this field. Queries that limit the possible values of `submission_date` can run significantly faster.
+* `activity_date` is the date pings were generated on the client for a particular aggregate.
+    * For example, `select sum(stats['usage_hours']) from crash_aggregates where activity_date = '2016-03-15'` will give the total number of user hours represented by pings generated on March 15, 2016.
+    * This can be several days before the pings are actually submitted, so it will always be before or on its corresponding `submission_date`.
+    * Therefore, queries that are sensitive to when measurements were taken on the client should prefer this field over `submission_date`
+* `dimensions` is a map of all the other dimensions that we currently care about. These fields include:
+    * `dimensions['build_version']` is the program version, like `46.0a1`.
+    * `dimensions['build_date']` is the YYYYMMDDhhmmss timestamp the program was built, like `20160123180541`. This is also known as the "build ID" or "buildid".
+    * `dimensions['channel']` is the channel, like `release` or `beta`.
+    * `dimensions['application']` is the program name, like `Firefox` or `Fennec`.
+    * `dimensions['os_name']` is the name of the OS the program is running on, like `Darwin` or `Windows_NT`.
+    * `dimensions['os_version']` is the version of the OS the program is running on.
+    * `dimensions['architecture']` is the architecture that the program was built for (not necessarily the one it is running on).
+    * `dimensions['country']` is the country code for the user (determined using geoIP), like `US` or `UK`.
+    * `dimensions['experiment_id']` is the identifier of the experiment being participated in, such as `e10s-beta46-noapz@experiments.mozilla.org`, or null if no experiment.
+    * `dimensions['experiment_branch']` is the branch of the experiment being participated in, such as `control` or `experiment`, or null if no experiment.
+    * `dimensions['e10s_enabled']` is whether E10S is enabled.
+    * All of the above fields can potentially be blank, which means "not present". That means that in the actual pings, the corresponding fields were null.
 * `stats` contains the aggregate values that we care about:
-    * `stats->>'usage_hours'` is the number of user-hours represented by the aggregate.
-    * `stats->>'main_crashes'` is the number of main process crashes represented by the aggregate (or just program crashes, in the non-E10S case).
-    * `stats->>'content_crashes'` is the number of content process crashes represented by the aggregate.
-    * `stats->>'plugin_crashes'` is the number of plugin process crashes represented by the aggregate.
+    * `stats['usage_hours']` is the number of user-hours represented by the aggregate.
+    * `stats['main_crashes']` is the number of main process crashes represented by the aggregate (or just program crashes, in the non-E10S case).
+    * `stats['content_crashes']` is the number of content process crashes represented by the aggregate.
+    * `stats['plugin_crashes']` is the number of plugin process crashes represented by the aggregate.
+    * `stats['gmplugin_crashes']` is the number of Gecko media plugin process crashes represented by the aggregate.
 
 Plugin process crashes per hour on Nightly for March 14:
 
 ```sql
-SELECT sum(stats->>'plugin_crashes') / sum(stats->>'usage_hours') FROM aggregates
+SELECT sum(stats['plugin_crashes'] / sum(stats->>'usage_hours') FROM aggregates
 WHERE dimensions->>'channel' = 'nightly' AND submission_date = '2016-03-14'
 ```
 
-Main process crashes by date and E10S setting.
+Main process crashes by build date and E10S setting.
 
 ```sql
 WITH channel_rates AS (
-  SELECT dimensions->>'build_date' AS build_date,
-         SUM((stats->>'main_crashes')::float) AS main_crashes, -- total number of crashes
-         SUM((stats->>'usage_hours')::float) / 1000 AS usage_kilohours, -- thousand hours of usage
-         dimensions->>'e10s_enabled' AS e10s_enabled -- e10s setting
-   FROM aggregates
-   WHERE (dimensions->>'experiment_id') IS NULL -- not in an experiment
-     AND dimensions->>'build_date' ~ '^\d{14}$' -- validate build IDs
-     AND dimensions->>'build_date' > '20160201000000' -- only in the date range that we care about
-   GROUP BY dimensions->>'build_date', dimensions->>'e10s_enabled'
+  SELECT dimensions['build_date'] AS build_date,
+         SUM(stats['main_crashes']) AS main_crashes, -- total number of crashes
+         SUM(stats['usage_hours']) / 1000 AS usage_kilohours, -- thousand hours of usage
+         dimensions['e10s_enabled'] AS e10s_enabled -- e10s setting
+   FROM crash_aggregates
+   WHERE dimensions['experiment_id'] = 'None' -- not in an experiment
+     AND regexp_like(dimensions['build_date'], '^\d{14}$') -- validate build IDs
+     AND dimensions['build_date'] > '20160201000000' -- only in the date range that we care about
+   GROUP BY dimensions['build_date'], dimensions['e10s_enabled']
 )
-SELECT to_date(build_date, 'YYYYMMDDHH24MISS'), -- program build date
+SELECT parse_datetime(build_date, 'yyyyMMddHHmmss') as build_date, -- program build date
        usage_kilohours, -- thousands of usage hours
        e10s_enabled, -- e10s setting
        main_crashes / usage_kilohours AS main_crash_rate -- crash rate being defined as crashes per thousand usage hours
