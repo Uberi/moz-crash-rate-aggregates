@@ -120,7 +120,7 @@ When running in the Telemetry Analysis Environment, debugging can be a pain. The
 * `tail -f /mnt/spark.log` to view the Spark logs.
 * `yum install nethogs; sudo nethogs` to monitor network utilization for each process.
 
-`crash_rate_aggregates/run.sh` is useful for manually setting up running the crash rate aggregator for the current day. To use this script, AWS credentials need to be set up. This can be done by running `aws configure` in the Vagrant VM, and following the prompts.
+To run the job, see `/vagrant/crash_rate_aggregates/fill_database.py --help`. The simplest possible usage is `python fill_database.py`.
 
 Deployment
 ----------
