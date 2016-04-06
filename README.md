@@ -9,7 +9,7 @@ Scheduled batch job for computing aggregate crash rates across a variety of crit
     * The job, `crash-aggregates`, runs the `run_fill_database.ipynb` Jupyter notebook, which downloads, installs, and runs the crash-rate-aggregates on the cluster.
     * Currently, this job is running under :azhang's account every day at 1am UTC, with the default settings for everything else. The job is named `crash-aggregates`.
 * The job uploads the resulting data to S3, under prefixes of the form `crash-aggregates/v1/submission_date=(YYYY-MM-DD SUBMISSION DATE)/` in the `telemetry-test-bucket` bucket.
-    * Each of these prefixes is called a partition. There is a partition for each submission date.
+    * Each of these prefixes is a partition. There is a partition for each submission date.
 * We have [Presto](https://prestodb.io/) set up to query the data on S3 using Presto's SQL query engine.
     * Currently, this instance is available at `ec2-54-218-5-112.us-west-2.compute.amazonaws.com`. The [provisioning files for the Presto instance](https://github.com/vitillo/emr-bootstrap-presto) are available as well.
     * At the moment, new partitions must be imported using [parquet2hive](https://github.com/vitillo/parquet2hive). There's a temporary cron job set up on the instance to do the importing, which will [eventually be replaced with something better](https://bugzilla.mozilla.org/show_bug.cgi?id=1251648).
@@ -49,7 +49,7 @@ The `crash_aggregates` table has 4 commonly-used columns:
     * Therefore, queries that are sensitive to when measurements were taken on the client should prefer this field over `submission_date`.
 * `dimensions` is a map of all the other dimensions that we currently care about. These fields include:
     * `dimensions['build_version']` is the program version, like `46.0a1`.
-    * `dimensions['build_date']` is the YYYYMMDDhhmmss timestamp the program was built, like `20160123180541`. This is also known as the "build ID" or "buildid".
+    * `dimensions['build_id']` is the YYYYMMDDhhmmss timestamp the program was built, like `20160123180541`. This is also known as the "build ID" or "buildid".
     * `dimensions['channel']` is the channel, like `release` or `beta`.
     * `dimensions['application']` is the program name, like `Firefox` or `Fennec`.
     * `dimensions['os_name']` is the name of the OS the program is running on, like `Darwin` or `Windows_NT`.
@@ -71,30 +71,30 @@ Plugin process crashes per hour on Nightly for March 14:
 
 ```sql
 SELECT sum(stats['plugin_crashes'] / sum(stats->>'usage_hours') FROM aggregates
-WHERE dimensions->>'channel' = 'nightly' AND submission_date = '2016-03-14'
+WHERE dimensions->>'channel' = 'nightly' AND activity_date = '2016-03-14'
 ```
 
 Main process crashes by build date and E10S setting.
 
 ```sql
 WITH channel_rates AS (
-  SELECT dimensions['build_date'] AS build_date,
+  SELECT dimensions['build_id'] AS build_id,
          SUM(stats['main_crashes']) AS main_crashes, -- total number of crashes
          SUM(stats['usage_hours']) / 1000 AS usage_kilohours, -- thousand hours of usage
          dimensions['e10s_enabled'] AS e10s_enabled -- e10s setting
    FROM crash_aggregates
-   WHERE dimensions['experiment_id'] = 'None' -- not in an experiment
-     AND regexp_like(dimensions['build_date'], '^\d{14}$') -- validate build IDs
-     AND dimensions['build_date'] > '20160201000000' -- only in the date range that we care about
-   GROUP BY dimensions['build_date'], dimensions['e10s_enabled']
+   WHERE dimensions['experiment_id'] is null -- not in an experiment
+     AND regexp_like(dimensions['build_id'], '^\d{14}$') -- validate build IDs
+     AND dimensions['build_id'] > '20160201000000' -- only in the date range that we care about
+   GROUP BY dimensions['build_id'], dimensions['e10s_enabled']
 )
-SELECT parse_datetime(build_date, 'yyyyMMddHHmmss') as build_date, -- program build date
+SELECT parse_datetime(build_id, 'yyyyMMddHHmmss') as build_id, -- program build date
        usage_kilohours, -- thousands of usage hours
        e10s_enabled, -- e10s setting
        main_crashes / usage_kilohours AS main_crash_rate -- crash rate being defined as crashes per thousand usage hours
 FROM channel_rates
 WHERE usage_kilohours > 100 -- only aggregates that have statistically significant usage hours
-ORDER BY build_date ASC
+ORDER BY build_id ASC
 ```
 
 Development
@@ -106,11 +106,11 @@ To set up a development environment, simply run `vagrant up` and then `vagrant s
 
 To set up the environment locally on Ubuntu 14.04 LTS, simply run `sudo ansible-playbook -i ansible/inventory/localhost.ini ansible/dev.yml`.
 
-Note that within the Vagrant VM, you should use `~/miniconda2/bin/python` as the main Python binary. All the packages are installed for Miniconda's Python rather than the system Python.
+Note that within the Vagrant VM, `~/miniconda2/bin/python` is the main Python binary (the one you get when you do `which python`). All the packages are installed for Miniconda's Python rather than the system Python.
 
 To backfill data, just run `crash_rate_aggregates/fill_database.py` with the desired start/end dates as the `--min-submission-date`/`--max-submission-date` arguments.
 
-To run the tests, execute `PYTHONPATH=.:$PYTHONPATH python -m unittest discover -s /vagrant/test` in the Vagrant VM.
+To run the tests, execute `python -m unittest discover -s /vagrant/test` in the Vagrant VM.
 
 To add a new dimension to compare on, add matching entries to `COMPARABLE_DIMENSIONS` and `DIMENSION_NAMES` in `crash_rate_aggregates/fill_database.py`.
 
