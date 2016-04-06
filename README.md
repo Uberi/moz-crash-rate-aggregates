@@ -25,13 +25,13 @@ A query that computes crash rates for each channel (sorted by number of usage ho
 ```sql
 SELECT dimensions['channel'] AS channel,
        sum(stats['usage_hours']) AS usage_hours,
-       1000 * sum(stats['main_crashes']) / sum(cast(stats['usage_hours'] AS DOUBLE)) AS main_crash_rate,
-       1000 * sum(stats['content_crashes']) / sum(cast(stats['usage_hours'] AS DOUBLE)) AS content_crash_rate,
-       1000 * sum(stats['plugin_crashes']) / sum(cast(stats['usage_hours'] AS DOUBLE)) AS plugin_crash_rate,
-       1000 * sum(stats['gmplugin_crashes']) / sum(cast(stats['usage_hours'] AS DOUBLE)) AS gmplugin_crash_rate
+       1000 * sum(stats['main_crashes']) / sum(stats['usage_hours']) AS main_crash_rate,
+       1000 * sum(stats['content_crashes']) / sum(stats['usage_hours']) AS content_crash_rate,
+       1000 * sum(stats['plugin_crashes']) / sum(stats['usage_hours']) AS plugin_crash_rate,
+       1000 * sum(stats['gmplugin_crashes']) / sum(stats['usage_hours']) AS gmplugin_crash_rate
 FROM crash_aggregates
 GROUP BY dimensions['channel']
-ORDER BY -sum(cast(stats['usage_hours'] AS DOUBLE))
+ORDER BY -sum(stats['usage_hours'])
 ```
 
 An aggregate in this context is a combined collection of Telemetry pings. An aggregate for Windows 7 64-bit Firefox on March 15, 2016 represents the stats for all pings that originate from Windows 7 64-bit Firefox, on March 15, 2016. Aggregates represent all the pings that meet that aggregate's criteria. The subpopulations represented by individual aggregates are always disjoint.
