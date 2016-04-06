@@ -2,7 +2,7 @@
   hosts: all
 
   vars:
-    - spark_version: 1.3.1
+    - spark_version: 1.6.0
 
   tasks:
     - name: install packages
@@ -13,7 +13,7 @@
         - liblzma-dev
         - openjdk-7-jdk
         - python-numpy
-        - python-pandas
+        - python-pandas # we're installing numpy and pandas using apt because it speeds up the conda install a lot later on
         - wget
         - ca-certificates
 
@@ -43,7 +43,6 @@
     - name: setup Python dependencies
       pip: name={{item}} state=present executable={{ansible_env.HOME}}/miniconda2/bin/pip
       with_items:
-        - telemetry-tools
         - python_moztelemetry
         - awscli
 
@@ -68,4 +67,4 @@
       lineinfile: >
         dest={{ansible_env.HOME}}/.bashrc
         regexp="^export PYTHONPATH"
-        line="export PYTHONPATH=$SPARK_HOME/python:$SPARK_HOME/python/lib/py4j-0.8.2.1-src.zip"
+        line="export PYTHONPATH=$SPARK_HOME/python:$(ls -1 $SPARK_HOME/python/lib/py4j-*-src.zip | head -1)"

@@ -34,7 +34,7 @@ def generate_pings():
     for dimensions in itertools.product(*dimension_value_pairs):
         yield generate_payload(dict(dimensions))
 
-def generate_payload(dimensions): #wip: country field
+def generate_payload(dimensions):
     meta = {
         u"submissionDate": dimensions["submission_date"],
         u"sampleId": 42,
