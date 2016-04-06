@@ -1,4 +1,5 @@
 import uuid
+import itertools
 
 NUM_CHILDREN_PER_PING = 3
 SCALAR_VALUE = 42
@@ -21,37 +22,17 @@ ping_dimensions = {
 }
 
 def generate_pings():
-    for submission_date in ping_dimensions["submission_date"]:
-        for activity_date in ping_dimensions["activity_date"]:
-            for application in ping_dimensions["application"]:
-                for doc_type in ping_dimensions["doc_type"]:
-                    for channel in ping_dimensions["channel"]:
-                        for build_version in ping_dimensions["build_version"]:
-                            for build_id in ping_dimensions["build_id"]:
-                                for os_name in ping_dimensions["os_name"]:
-                                    for os_version in ping_dimensions["os_version"]:
-                                        for architecture in ping_dimensions["architecture"]:
-                                            for e10s in ping_dimensions["e10s"]:
-                                                for country in ping_dimensions["country"]:
-                                                    for experiment_id in ping_dimensions["experiment_id"]:
-                                                        for experiment_branch in ping_dimensions["experiment_branch"]:
-                                                            dimensions = {
-                                                                u"submission_date": submission_date,
-                                                                u"activity_date": activity_date,
-                                                                u"application": application,
-                                                                u"doc_type": doc_type,
-                                                                u"channel": channel,
-                                                                u"build_version": build_version,
-                                                                u"build_id": build_id,
-                                                                u"os_name": os_name,
-                                                                u"os_version": os_version,
-                                                                u"architecture": architecture,
-                                                                u"e10s": e10s,
-                                                                u"country": country,
-                                                                u"experiment_id": experiment_id,
-                                                                u"experiment_branch": experiment_branch,
-                                                            }
-                                                            yield generate_payload(dimensions)
+    # obtain a list of lists of tuples of the form (DIMENSION_NAME, POSSIBLE_DIMENSION_VALUE)
+    # each list in the top-level list contains only one type of DIMENSION_NAME in its tuples
+    dimension_value_pairs = (
+        [(dimension, value) for value in values]
+        for dimension, values in ping_dimensions.items()
+    )
+
+    # the Cartesian product contains every combination of dimension values
+    # this is equivalent to a very deeply nested list
+    for dimensions in itertools.product(*dimension_value_pairs):
+        yield generate_payload(dict(dimensions))
 
 def generate_payload(dimensions): #wip: country field
     meta = {

@@ -112,7 +112,9 @@ To backfill data, just run `crash_rate_aggregates/fill_database.py` with the des
 
 To run the tests, execute `python -m unittest discover -s /vagrant/test` in the Vagrant VM.
 
-To add a new dimension to compare on, add matching entries to `COMPARABLE_DIMENSIONS` and `DIMENSION_NAMES` in `crash_rate_aggregates/fill_database.py`.
+To add a new dimension to compare on, add matching entries to `COMPARABLE_DIMENSIONS` and `DIMENSION_NAMES` in `crash_rate_aggregates/fill_database.py`. Also make sure to add a matching entry to `ping_dimensions` in `test/dataset.py`, and update the counts in the relevant tests.
+
+Note that new dimensions will exponentially increase the number of aggregates. Adding one Boolean aggregate, for example, might double the possibilities.
 
 When running in the Telemetry Analysis Environment, debugging can be a pain. These commands can be helpful:
 
