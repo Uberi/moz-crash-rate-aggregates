@@ -3,12 +3,10 @@
 import re
 import sys
 import os
-import sys
-import numpy as np
 import dateutil.parser
 import pyspark.sql.types as types
 
-from moztelemetry.spark import get_pings, Histogram
+from moztelemetry.spark import get_pings
 from datetime import datetime, date, timedelta
 
 FRACTION = 1.0
@@ -45,14 +43,21 @@ DIMENSION_NAMES = [
 
 assert len(COMPARABLE_DIMENSIONS) == len(DIMENSION_NAMES), "COMPARABLE_DIMENSIONS and DIMENSION_NAMES must match"
 
-def compare_crashes(pings, start_date, end_date, comparable_dimensions, dimension_names):
-    """Returns a PairRDD where keys are user configurations and values are Numpy arrays of the form [usage hours, main process crashes, content process crashes, plugin crashes]"""
+def compare_crashes(spark_context, pings, comparable_dimensions, dimension_names):
+    """Returns a PairRDD of crash aggregates, as well as the number of pings originally and the number of pings represented by the aggregates."""
     def get_property(value, path):
         for key in path:
             if not isinstance(value, dict) or key not in value:
                 return None
             value = value[key]
         return value
+
+    def get_count_histogram_value(histogram):
+        if not isinstance(histogram, dict):
+            return 0 # definitely not a histogram, maybe it isn't even present
+        if "values" not in histogram:
+            return 0 # malformed or invalid histogram
+        return long(histogram["values"].get("0", 0))
 
     def get_properties(ping):
         result = {
@@ -72,33 +77,33 @@ def compare_crashes(pings, start_date, end_date, comparable_dimensions, dimensio
         result["subsession_length"] = get_property(ping, ("payload", "info", "subsessionLength"))
         result["doc_type"] = get_property(ping, ("meta", "docType"))
 
-        subprocess_crash_content = get_property(ping, ("payload", "keyedHistograms", "SUBPROCESS_CRASHES_WITH_DUMP", "content"))
-        result["subprocess_crash_content"] = 0 if subprocess_crash_content is None else Histogram("SUBPROCESS_CRASHES_WITH_DUMP", subprocess_crash_content).get_value()
-
-        subprocess_crash_plugin = get_property(ping, ("payload", "keyedHistograms", "SUBPROCESS_CRASHES_WITH_DUMP", "plugin"))
-        result["subprocess_crash_plugin"] = 0 if subprocess_crash_plugin is None else Histogram("SUBPROCESS_CRASHES_WITH_DUMP", subprocess_crash_plugin).get_value()
-
-        subprocess_crash_gmplugin = get_property(ping, ("payload", "keyedHistograms", "SUBPROCESS_CRASHES_WITH_DUMP", "gmplugin"))
-        result["subprocess_crash_gmplugin"] = 0 if subprocess_crash_gmplugin is None else Histogram("SUBPROCESS_CRASHES_WITH_DUMP", subprocess_crash_gmplugin).get_value()
+        result["subprocess_crash_content"] = get_count_histogram_value(
+            get_property(ping, ("payload", "keyedHistograms", "SUBPROCESS_CRASHES_WITH_DUMP", "content"))
+        )
+        result["subprocess_crash_plugin"] = get_count_histogram_value(
+            get_property(ping, ("payload", "keyedHistograms", "SUBPROCESS_CRASHES_WITH_DUMP", "plugin"))
+        )
+        result["subprocess_crash_gmplugin"] = get_count_histogram_value(
+            get_property(ping, ("payload", "keyedHistograms", "SUBPROCESS_CRASHES_WITH_DUMP", "gmplugin"))
+        )
         return result
 
-    def is_valid(ping): # sanity check to make sure the ping is actually usable for our purposes
-        if not isinstance(ping["submission_date"], date):
-            return False
-        if not isinstance(ping["activity_date"], date):
-            return False
-        subsession_length = ping["subsession_length"]
-        if subsession_length is not None and not isinstance(subsession_length, (int, long)):
-            return False
-        if not isinstance(ping["build_id"], (str, unicode)):
-            return False
-        if not re.match(r"^\d{14}$", ping["build_id"]): # only accept valid buildids
-            return False
-        return True
+    ignored_pings_accumulator = spark_context.accumulator(0)
 
-    original_count = pings.count()
-    ping_properties = pings.map(get_properties).filter(is_valid).cache()
-    filtered_count = ping_properties.count()
+    def is_valid(ping): # sanity check to make sure the ping is actually usable for our purposes
+        subsession_length = ping["subsession_length"]
+        if (
+            isinstance(ping["submission_date"], date) and
+            isinstance(ping["activity_date"], date) and
+            (subsession_length is None or isinstance(subsession_length, (int, long))) and
+            isinstance(ping["build_id"], (str, unicode)) and
+            re.match(r"^\d{14}$", ping["build_id"]) # only accept valid buildids
+        ):
+            return True
+        ignored_pings_accumulator.add(1)
+        return False
+
+    ping_properties = pings.map(get_properties).filter(is_valid)
 
     def get_crash_pair(ping): # responsible for normalizing a single ping into a crash pair
         submission_date = ping["submission_date"] # convert the YYYYMMDD format to a real date
@@ -110,7 +115,7 @@ def compare_crashes(pings, start_date, end_date, comparable_dimensions, dimensio
         plugin_crashes = ping["subprocess_crash_plugin"] or 0
         gecko_media_plugin_crashes = ping["subprocess_crash_gmplugin"] or 0
         return (
-            (submission_date, activity_date) + tuple(ping[key] for key in dimension_names), # all the dimensions we can compare by
+            (activity_date,) + tuple(ping[key] for key in dimension_names), # all the dimensions we can compare by
             [ # the crash values
                 1, # number of pings represented by the aggregate
                 usage_hours, main_crashes, content_crashes, plugin_crashes, gecko_media_plugin_crashes,
@@ -124,23 +129,23 @@ def compare_crashes(pings, start_date, end_date, comparable_dimensions, dimensio
 
     def dimension_mapping(pair): # responsible for converting aggregate crash pairs into individual dimension fields
         dimension_key, stats_array = pair
-        (submission_date, activity_date), dimension_values = dimension_key[:2], dimension_key[2:]
+        (activity_date,), dimension_values = dimension_key[:1], dimension_key[1:]
         stats_names = [
             "ping_count",
             "usage_hours", "main_crashes", "content_crashes", "plugin_crashes", "gmplugin_crashes",
             "usage_hours_squared", "main_crashes_squared", "content_crashes_squared", "plugin_crashes_squared", "gmplugin_crashes_squared",
         ]
         return (
-            submission_date, activity_date,
+            activity_date.strftime("%Y-%m-%d"),
             {
-                key: str(dimension_value).encode("ascii", errors="replace")
+                key: str(dimension_value).decode("ascii", errors="replace")
                 for key, dimension_value in zip(dimension_names, dimension_values)
                 if dimension_value is not None # only include the keys for which the value isn't null
             },
-            dict(zip(stats_names, stats_array)), # dictionary mapping keys to their corresponding stats
+            dict(zip(stats_names, map(float, stats_array))), # dictionary mapping keys to their corresponding stats
         )
 
-    return crash_values.map(dimension_mapping), original_count, filtered_count
+    return crash_values.map(dimension_mapping), ignored_pings_accumulator
 
 def retrieve_crash_data(sc, submission_date_range, comparable_dimensions, fraction):
     # get the raw data
@@ -163,7 +168,7 @@ def run_job(spark_context, sql_context, submission_date_range, use_test_data = F
     end_date = datetime.strptime(submission_date_range[1], "%Y%m%d").date()
 
     schema = types.StructType([
-        types.StructField("activity_date",   types.DateType(),                                            nullable=False),
+        types.StructField("activity_date",   types.StringType(),                                          nullable=False),
         types.StructField("dimensions",      types.MapType(types.StringType(), types.StringType(), True), nullable=False),
         types.StructField("stats",           types.MapType(types.StringType(), types.DoubleType(), True), nullable=False),
     ])
@@ -179,7 +184,7 @@ def run_job(spark_context, sql_context, submission_date_range, use_test_data = F
         else:
             pings = retrieve_crash_data(spark_context, current_date.strftime("%Y%m%d"), COMPARABLE_DIMENSIONS, FRACTION)
 
-        result, original_count, filtered_count = compare_crashes(pings, current_date, current_date, COMPARABLE_DIMENSIONS, DIMENSION_NAMES)
+        result, ignored_count = compare_crashes(spark_context, pings, COMPARABLE_DIMENSIONS, DIMENSION_NAMES)
         result = result.coalesce(1) # put everything into a single partition
         df = sql_context.createDataFrame(result, schema)
         print("SUCCESSFULLY COMPUTED CRASH AGGREGATES FOR {}".format(current_date))
@@ -194,7 +199,7 @@ def run_job(spark_context, sql_context, submission_date_range, use_test_data = F
 
     print("========================================")
     print("JOB COMPLETED SUCCESSFULLY")
-    print("{} pings processed, {} pings ignored".format(filtered_count, original_count - filtered_count))
+    print("{} pings ignored".format(ignored_count.value))
     print("========================================")
 
 if __name__ == "__main__":
@@ -216,7 +221,9 @@ if __name__ == "__main__":
     submission_date_range = (args.min_submission_date, args.max_submission_date)
     use_test_data = args.use_test_data
 
-    sc = SparkContext()
+    if args.use_test_data:
+        sc = SparkContext(master="local[1]") # run sequentially with only 1 worker (useful for debugging)
+    else:
+        sc = SparkContext()
     sqlContext = SQLContext(sc)
-    #sc = SparkContext(master="local[1]") # run sequentially with only 1 worker (useful for debugging)
     run_job(sc, sqlContext, submission_date_range, use_test_data=use_test_data)

@@ -31,9 +31,9 @@ class TestStringMethods(unittest.TestCase):
         self.sc = pyspark.SparkContext(master="local[1]")
         self.raw_pings = self.sc.parallelize(list(dataset.generate_pings()))
 
-        result, self.original_count, self.filtered_count = compare_crashes(
+        result, self.ignored_count = compare_crashes(
+            self.sc,
             self.raw_pings,
-            date(2016, 3, 5), date(2016, 6, 7),
             COMPARABLE_DIMENSIONS, DIMENSION_NAMES
         )
         self.crash_rate_aggregates = result.collect()
@@ -48,23 +48,18 @@ class TestStringMethods(unittest.TestCase):
             len(FOLDED_DIMENSIONS)
         )
         self.assertEqual(self.raw_pings.count(), expected_pings)
-        self.assertEqual(self.original_count, self.raw_pings.count())
-        self.assertEqual(self.original_count, self.filtered_count)
+        self.assertEqual(self.ignored_count.value, 0)
         self.assertEqual(len(self.crash_rate_aggregates), expected_pings / 2) # the doc_type dimension should be collapsed by compare_crashes
 
-    def test_submission_date(self):
-        for submission_date, activity_date, dimensions, crashes in self.crash_rate_aggregates:
-            self.assertIn(submission_date, {date(2016, 3, 5), date(2016, 6, 7)})
-
     def test_activity_date(self):
-        for submission_date, activity_date, dimensions, crashes in self.crash_rate_aggregates:
+        for activity_date, dimensions, crashes in self.crash_rate_aggregates:
             self.assertIn(activity_date, {
-                date(2016, 3, 2), date(2016, 6, 1), # these are directly from the dataset
-                date(2016, 3, 5), date(2016, 5, 31), # these are normalized to be around the time of the submission date
+                "2016-03-02", "2016-06-01", # these are directly from the dataset
+                "2016-03-05", "2016-05-31", # these are normalized to be around the time of the submission date
             })
 
     def test_keys(self):
-        for submission_date, activity_date, dimensions, stats in self.crash_rate_aggregates:
+        for activity_date, dimensions, stats in self.crash_rate_aggregates:
             self.assertIn(dimensions["build_version"],     dataset.ping_dimensions["build_version"])
             self.assertIn(dimensions["build_id"],          dataset.ping_dimensions["build_id"])
             self.assertIn(dimensions["channel"],           dataset.ping_dimensions["channel"])
@@ -78,7 +73,7 @@ class TestStringMethods(unittest.TestCase):
             self.assertIn(dimensions["e10s_enabled"],      ["True", "False"])
 
     def test_crash_rates(self):
-        for submission_date, activity_date, dimensions, stats in self.crash_rate_aggregates:
+        for activity_date, dimensions, stats in self.crash_rate_aggregates:
             self.assertEqual(stats["ping_count"], 2)
             self.assertEqual(stats["usage_hours"], 42 * 2 / 3600.0)
             self.assertEqual(stats["main_crashes"], 1)
