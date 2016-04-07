@@ -1,11 +1,9 @@
 #!/usr/bin/env bash
 
 import unittest
-import logging
-import re
-from datetime import date
 
-import sys, os
+import sys
+import os
 try:
     sys.path.append(os.path.join(os.environ['SPARK_HOME'], "python"))
 except KeyError:
@@ -15,8 +13,9 @@ import pyspark
 
 import dataset
 
-import sys, os
-from crash_rate_aggregates.fill_database import compare_crashes, COMPARABLE_DIMENSIONS, DIMENSION_NAMES
+from crash_rate_aggregates.fill_database import compare_crashes, \
+                                                COMPARABLE_DIMENSIONS, \
+                                                DIMENSION_NAMES
 
 # these dimensions are used to compute aggregate keys, but they're stored as separate columns
 COLUMN_DIMENSIONS = ["submission_date", "activity_date"]
@@ -25,6 +24,7 @@ COLUMN_DIMENSIONS = ["submission_date", "activity_date"]
 # in other words, the value of these dimensions doesn't affect which aggregate they are placed in
 # though they can affect the stats within each aggregate
 FOLDED_DIMENSIONS = ["doc_type"]
+
 
 class TestStringMethods(unittest.TestCase):
     def setUp(self):
@@ -49,28 +49,63 @@ class TestStringMethods(unittest.TestCase):
         )
         self.assertEqual(self.raw_pings.count(), expected_pings)
         self.assertEqual(self.ignored_count.value, 0)
-        self.assertEqual(len(self.crash_rate_aggregates), expected_pings / 2) # the doc_type dimension should be collapsed by compare_crashes
+
+        # the doc_type dimension should be collapsed by compare_crashes
+        self.assertEqual(len(self.crash_rate_aggregates), expected_pings / 2)
 
     def test_activity_date(self):
         for activity_date, dimensions, crashes in self.crash_rate_aggregates:
             self.assertIn(activity_date, {
-                "2016-03-02", "2016-06-01", # these are directly from the dataset
-                "2016-03-05", "2016-05-31", # these are normalized to be around the time of the submission date
+                "2016-03-02", "2016-06-01",  # these are directly from the dataset
+                "2016-03-05", "2016-05-31",  # these are bounded to be around the submission date
             })
 
     def test_keys(self):
         for activity_date, dimensions, stats in self.crash_rate_aggregates:
-            self.assertIn(dimensions["build_version"],     dataset.ping_dimensions["build_version"])
-            self.assertIn(dimensions["build_id"],          dataset.ping_dimensions["build_id"])
-            self.assertIn(dimensions["channel"],           dataset.ping_dimensions["channel"])
-            self.assertIn(dimensions["application"],       dataset.ping_dimensions["application"])
-            self.assertIn(dimensions["os_name"],           dataset.ping_dimensions["os_name"])
-            self.assertIn(dimensions["os_version"],        dataset.ping_dimensions["os_version"])
-            self.assertIn(dimensions["architecture"],      dataset.ping_dimensions["architecture"])
-            self.assertIn(dimensions["country"],           dataset.ping_dimensions["country"])
-            self.assertIn(dimensions.get("experiment_id"), dataset.ping_dimensions["experiment_id"])
-            self.assertIn(dimensions["experiment_branch"], dataset.ping_dimensions["experiment_branch"])
-            self.assertIn(dimensions["e10s_enabled"],      ["True", "False"])
+            self.assertIn(
+                dimensions["build_version"],
+                dataset.ping_dimensions["build_version"]
+            )
+            self.assertIn(
+                dimensions["build_id"],
+                dataset.ping_dimensions["build_id"]
+            )
+            self.assertIn(
+                dimensions["channel"],
+                dataset.ping_dimensions["channel"]
+            )
+            self.assertIn(
+                dimensions["application"],
+                dataset.ping_dimensions["application"]
+            )
+            self.assertIn(
+                dimensions["os_name"],
+                dataset.ping_dimensions["os_name"]
+            )
+            self.assertIn(
+                dimensions["os_version"],
+                dataset.ping_dimensions["os_version"]
+            )
+            self.assertIn(
+                dimensions["architecture"],
+                dataset.ping_dimensions["architecture"]
+            )
+            self.assertIn(
+                dimensions["country"],
+                dataset.ping_dimensions["country"]
+            )
+            self.assertIn(
+                dimensions.get("experiment_id"),
+                dataset.ping_dimensions["experiment_id"]
+            )
+            self.assertIn(
+                dimensions["experiment_branch"],
+                dataset.ping_dimensions["experiment_branch"]
+            )
+            self.assertIn(
+                dimensions["e10s_enabled"],
+                ["True", "False"]
+            )
 
     def test_crash_rates(self):
         for activity_date, dimensions, stats in self.crash_rate_aggregates:

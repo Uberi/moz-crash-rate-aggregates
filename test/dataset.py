@@ -21,6 +21,7 @@ ping_dimensions = {
     "experiment_branch": ["control", "experiment"],
 }
 
+
 def generate_pings():
     # obtain a list of lists of tuples of the form (DIMENSION_NAME, POSSIBLE_DIMENSION_VALUE)
     # each list in the top-level list contains only one type of DIMENSION_NAME in its tuples
@@ -33,6 +34,7 @@ def generate_pings():
     # this is equivalent to a very deeply nested list
     for dimensions in itertools.product(*dimension_value_pairs):
         yield generate_payload(dict(dimensions))
+
 
 def generate_payload(dimensions):
     meta = {
