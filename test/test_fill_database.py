@@ -31,11 +31,12 @@ class TestStringMethods(unittest.TestCase):
         self.sc = pyspark.SparkContext(master="local[1]")
         self.raw_pings = self.sc.parallelize(list(dataset.generate_pings()))
 
-        self.crash_rate_aggregates = compare_crashes(
+        result, self.original_count, self.filtered_count = compare_crashes(
             self.raw_pings,
             date(2016, 3, 5), date(2016, 6, 7),
             COMPARABLE_DIMENSIONS, DIMENSION_NAMES
-        ).collect()
+        )
+        self.crash_rate_aggregates = result.collect()
 
     def tearDown(self):
         self.sc.stop()
@@ -47,6 +48,8 @@ class TestStringMethods(unittest.TestCase):
             len(FOLDED_DIMENSIONS)
         )
         self.assertEqual(self.raw_pings.count(), expected_pings)
+        self.assertEqual(self.original_count, self.raw_pings.count())
+        self.assertEqual(self.original_count, self.filtered_count)
         self.assertEqual(len(self.crash_rate_aggregates), expected_pings / 2) # the doc_type dimension should be collapsed by compare_crashes
 
     def test_submission_date(self):

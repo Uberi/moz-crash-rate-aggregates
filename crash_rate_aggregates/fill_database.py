@@ -59,8 +59,16 @@ def compare_crashes(pings, start_date, end_date, comparable_dimensions, dimensio
             key: get_property(ping, path)
             for key, path in zip(dimension_names, comparable_dimensions)
         }
-        result["submission_date"] = get_property(ping, ("meta", "submissionDate"))
-        result["activity_date"] = get_property(ping, ("creationDate",))
+
+        submission_date = get_property(ping, ("meta", "submissionDate"))
+        result["submission_date"] = datetime.strptime(submission_date, "%Y%m%d").date() # convert the YYYYMMDD format to a real date
+
+        activity_date = get_property(ping, ("creationDate",))
+        try:
+            result["activity_date"] = dateutil.parser.parse(activity_date).date() # the activity date is the date portion of creationDate
+        except: # malformed date, like how sometimes seconds that are not in [0, 59]
+            result["activity_date"] = None
+
         result["subsession_length"] = get_property(ping, ("payload", "info", "subsessionLength"))
         result["doc_type"] = get_property(ping, ("meta", "docType"))
         result["subprocess_crash_content"] = Histogram("SUBPROCESS_CRASHES_WITH_DUMP", get_property(ping, ("payload", "keyedHistograms", "SUBPROCESS_CRASHES_WITH_DUMP", "content"))).get_value()
@@ -68,12 +76,10 @@ def compare_crashes(pings, start_date, end_date, comparable_dimensions, dimensio
         result["subprocess_crash_gmplugin"] = Histogram("SUBPROCESS_CRASHES_WITH_DUMP", get_property(ping, ("payload", "keyedHistograms", "SUBPROCESS_CRASHES_WITH_DUMP", "gmplugin"))).get_value()
         return result
 
-    ping_properties = pings.map(get_properties)
-
     def is_valid(ping): # sanity check to make sure the ping is actually usable for our purposes
-        if not isinstance(ping["submission_date"], (str, unicode)):
+        if not isinstance(ping["submission_date"], date):
             return False
-        if not isinstance(ping["activity_date"], (str, unicode)):
+        if not isinstance(ping["activity_date"], date):
             return False
         subsession_length = ping["subsession_length"]
         if subsession_length is not None and not isinstance(subsession_length, (int, long)):
@@ -84,19 +90,13 @@ def compare_crashes(pings, start_date, end_date, comparable_dimensions, dimensio
             return False
         return True
 
+    original_count = pings.count()
+    ping_properties = pings.map(get_properties).filter(is_valid).cache()
+    filtered_count = ping_properties.count()
+
     def get_crash_pair(ping): # responsible for normalizing a single ping into a crash pair
-        # we need to parse and normalize the dates here rather than at the aggregates level,
-        # because we need to normalize and get rid of the time portion
-
-        # date the ping was received
-        submission_date = datetime.strptime(ping["submission_date"], "%Y%m%d").date() # convert the YYYYMMDD format to a real date
-
-        # date the ping was created on the client
-        try:
-            activity_date = dateutil.parser.parse(ping["activity_date"]).date() # the activity date is the date portion of creationDate
-        except: # malformed date, like how sometimes seconds that are not in [0, 59]
-            activity_date = submission_date # we'll just set it to the submission date, since we can't parse the activity date
-        activity_date = max(submission_date - timedelta(days=7), min(submission_date, activity_date)) # normalize the activity date if it's out of range
+        submission_date = ping["submission_date"] # convert the YYYYMMDD format to a real date
+        activity_date = max(submission_date - timedelta(days=7), min(submission_date, ping["activity_date"])) # normalize the activity date if it's out of range
 
         usage_hours = min(25, (ping["subsession_length"] or 0) / 3600.0) # usage hours, limited to ~25 hours to keep things normalized
         main_crashes = int(ping["doc_type"] == "crash") # main process crash (is a crash ping)
@@ -114,11 +114,7 @@ def compare_crashes(pings, start_date, end_date, comparable_dimensions, dimensio
             ]
         )
 
-    crash_values = (
-        ping_properties.filter(is_valid)
-                       .map(get_crash_pair)
-                       .reduceByKey(lambda a, b: [x + y for x, y in zip(a, b)])
-    )
+    crash_values = ping_properties.map(get_crash_pair).reduceByKey(lambda a, b: [x + y for x, y in zip(a, b)])
 
     def dimension_mapping(pair): # responsible for converting aggregate crash pairs into individual dimension fields
         dimension_key, stats_array = pair
@@ -138,7 +134,7 @@ def compare_crashes(pings, start_date, end_date, comparable_dimensions, dimensio
             dict(zip(stats_names, stats_array)), # dictionary mapping keys to their corresponding stats
         )
 
-    return crash_values.map(dimension_mapping)
+    return crash_values.map(dimension_mapping), original_count, filtered_count
 
 def retrieve_crash_data(sc, submission_date_range, comparable_dimensions, fraction):
     # get the raw data
@@ -177,7 +173,7 @@ def run_job(spark_context, sql_context, submission_date_range, use_test_data = F
         else:
             pings = retrieve_crash_data(spark_context, current_date.strftime("%Y%m%d"), COMPARABLE_DIMENSIONS, FRACTION)
 
-        result = compare_crashes(pings, current_date, current_date, COMPARABLE_DIMENSIONS, DIMENSION_NAMES).coalesce(1)
+        result, original_count, filtered_count = compare_crashes(pings, current_date, current_date, COMPARABLE_DIMENSIONS, DIMENSION_NAMES).coalesce(1)
         df = sql_context.createDataFrame(result, schema)
         print("SUCCESSFULLY COMPUTED CRASH AGGREGATES FOR {}".format(current_date))
 
@@ -191,6 +187,7 @@ def run_job(spark_context, sql_context, submission_date_range, use_test_data = F
 
     print("========================================")
     print("JOB COMPLETED SUCCESSFULLY")
+    print("{} pings processed, {} pings ignored".format(filtered_count, original_count - filtered_count))
     print("========================================")
 
 if __name__ == "__main__":
