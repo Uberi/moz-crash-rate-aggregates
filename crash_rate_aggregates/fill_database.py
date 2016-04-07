@@ -49,7 +49,7 @@ def compare_crashes(pings, start_date, end_date, comparable_dimensions, dimensio
     """Returns a PairRDD where keys are user configurations and values are Numpy arrays of the form [usage hours, main process crashes, content process crashes, plugin crashes]"""
     def get_property(value, path):
         for key in path:
-            if key not in value:
+            if not isinstance(value, dict) or key not in value:
                 return None
             value = value[key]
         return value
@@ -71,9 +71,15 @@ def compare_crashes(pings, start_date, end_date, comparable_dimensions, dimensio
 
         result["subsession_length"] = get_property(ping, ("payload", "info", "subsessionLength"))
         result["doc_type"] = get_property(ping, ("meta", "docType"))
-        result["subprocess_crash_content"] = Histogram("SUBPROCESS_CRASHES_WITH_DUMP", get_property(ping, ("payload", "keyedHistograms", "SUBPROCESS_CRASHES_WITH_DUMP", "content"))).get_value()
-        result["subprocess_crash_plugin"] = Histogram("SUBPROCESS_CRASHES_WITH_DUMP", get_property(ping, ("payload", "keyedHistograms", "SUBPROCESS_CRASHES_WITH_DUMP", "plugin"))).get_value()
-        result["subprocess_crash_gmplugin"] = Histogram("SUBPROCESS_CRASHES_WITH_DUMP", get_property(ping, ("payload", "keyedHistograms", "SUBPROCESS_CRASHES_WITH_DUMP", "gmplugin"))).get_value()
+
+        subprocess_crash_content = get_property(ping, ("payload", "keyedHistograms", "SUBPROCESS_CRASHES_WITH_DUMP", "content"))
+        result["subprocess_crash_content"] = 0 if subprocess_crash_content is None else Histogram("SUBPROCESS_CRASHES_WITH_DUMP", subprocess_crash_content).get_value()
+
+        subprocess_crash_plugin = get_property(ping, ("payload", "keyedHistograms", "SUBPROCESS_CRASHES_WITH_DUMP", "plugin"))
+        result["subprocess_crash_plugin"] = 0 if subprocess_crash_plugin is None else Histogram("SUBPROCESS_CRASHES_WITH_DUMP", subprocess_crash_plugin).get_value()
+
+        subprocess_crash_gmplugin = get_property(ping, ("payload", "keyedHistograms", "SUBPROCESS_CRASHES_WITH_DUMP", "gmplugin"))
+        result["subprocess_crash_gmplugin"] = 0 if subprocess_crash_gmplugin is None else Histogram("SUBPROCESS_CRASHES_WITH_DUMP", subprocess_crash_gmplugin).get_value()
         return result
 
     def is_valid(ping): # sanity check to make sure the ping is actually usable for our purposes
@@ -173,7 +179,8 @@ def run_job(spark_context, sql_context, submission_date_range, use_test_data = F
         else:
             pings = retrieve_crash_data(spark_context, current_date.strftime("%Y%m%d"), COMPARABLE_DIMENSIONS, FRACTION)
 
-        result, original_count, filtered_count = compare_crashes(pings, current_date, current_date, COMPARABLE_DIMENSIONS, DIMENSION_NAMES).coalesce(1)
+        result, original_count, filtered_count = compare_crashes(pings, current_date, current_date, COMPARABLE_DIMENSIONS, DIMENSION_NAMES)
+        result = result.coalesce(1) # put everything into a single partition
         df = sql_context.createDataFrame(result, schema)
         print("SUCCESSFULLY COMPUTED CRASH AGGREGATES FOR {}".format(current_date))
 
