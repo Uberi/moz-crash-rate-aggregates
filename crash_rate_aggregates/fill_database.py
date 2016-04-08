@@ -84,7 +84,10 @@ def compare_crashes(spark_context, pings, comparable_dimensions, dimension_names
         except:  # malformed date, like how sometimes seconds that are not in [0, 59]
             result["activity_date"] = None
 
+        # subsession lengths are None for crash pings, since we don't keep track of that for those
         result["subsession_length"] = get_property(ping, ("payload", "info", "subsessionLength"))
+
+        # this should always be valid as get_pings filters this for us
         result["doc_type"] = get_property(ping, ("meta", "docType"))
 
         result["subprocess_crash_content"] = get_count_histogram_value(
