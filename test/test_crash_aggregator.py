@@ -13,9 +13,9 @@ import pyspark
 
 import dataset
 
-from crash_rate_aggregates.fill_database import compare_crashes, \
-                                                COMPARABLE_DIMENSIONS, \
-                                                DIMENSION_NAMES
+from crash_rate_aggregates.crash_aggregator import compare_crashes, \
+                                                   COMPARABLE_DIMENSIONS, \
+                                                   DIMENSION_NAMES
 
 # these dimensions are used to compute aggregate keys, but they're stored as separate columns
 COLUMN_DIMENSIONS = ["submission_date", "activity_date"]

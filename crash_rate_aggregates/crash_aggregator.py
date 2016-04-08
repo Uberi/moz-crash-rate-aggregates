@@ -204,8 +204,8 @@ def retrieve_crash_data(sc, submission_date_range, comparable_dimensions, fracti
 
 def run_job(spark_context, sql_context, submission_date_range, use_test_data=False):
     """
-    Fill the specified database with crash aggregates for the specified
-    submission date range, creating the schema if needed.
+    Compute crash aggregates for the specified submission date range,
+    and upload the result to S3.
     """
     start_date = datetime.strptime(submission_date_range[0], "%Y%m%d").date()
     end_date = datetime.strptime(submission_date_range[1], "%Y%m%d").date()
@@ -281,7 +281,7 @@ if __name__ == "__main__":
 
     yesterday_utc = (datetime.utcnow() - timedelta(days=1)).strftime("%Y%m%d")
     parser = argparse.ArgumentParser(
-        description="Fill a Postgresql database with crash rate aggregates for a given date range."
+        description="Aggregate crash statistics and upload them to S3 for a given date range."
     )
     parser.add_argument(
         "--min-submission-date",

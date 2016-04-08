@@ -6,7 +6,7 @@ Crash Rate Aggregates
 Scheduled batch job for computing aggregate crash rates across a variety of criteria.
 
 * A Spark analysis runs daily using a [scheduled analysis job](https://analysis.telemetry.mozilla.org/cluster/schedule).
-    * The job, `crash-aggregates`, runs the `run_fill_database.ipynb` Jupyter notebook, which downloads, installs, and runs the crash-rate-aggregates on the cluster.
+    * The job, `crash-aggregates`, runs the `run_crash_aggregator.ipynb` Jupyter notebook, which downloads, installs, and runs the crash-rate-aggregates on the cluster.
     * Currently, this job is running under :azhang's account every day at 1am UTC, with the default settings for everything else. The job is named `crash-aggregates`.
 * The job uploads the resulting data to S3, under prefixes of the form `crash-aggregates/v1/submission_date=(YYYY-MM-DD SUBMISSION DATE)/` in the `telemetry-test-bucket` bucket.
     * Each of these prefixes is a partition. There is a partition for each submission date.
@@ -108,11 +108,11 @@ To set up the environment locally on Ubuntu 14.04 LTS, simply run `sudo ansible-
 
 Note that within the Vagrant VM, `~/miniconda2/bin/python` is the main Python binary (the one you get when you do `which python`). All the packages are installed for Miniconda's Python rather than the system Python.
 
-To backfill data, just run `crash_rate_aggregates/fill_database.py` with the desired start/end dates as the `--min-submission-date`/`--max-submission-date` arguments.
+To backfill data, just run `crash_rate_aggregates/crash_aggregator.py` with the desired start/end dates as the `--min-submission-date`/`--max-submission-date` arguments.
 
 To run the tests, execute `python -m unittest discover -s /vagrant/test` in the Vagrant VM.
 
-To add a new dimension to compare on, add matching entries to `COMPARABLE_DIMENSIONS` and `DIMENSION_NAMES` in `crash_rate_aggregates/fill_database.py`. Also make sure to add a matching entry to `ping_dimensions` in `test/dataset.py`, and update the counts in the relevant tests.
+To add a new dimension to compare on, add matching entries to `COMPARABLE_DIMENSIONS` and `DIMENSION_NAMES` in `crash_rate_aggregates/crash_aggregator.py`. Also make sure to add a matching entry to `ping_dimensions` in `test/dataset.py`, and update the counts in the relevant tests.
 
 Note that new dimensions will exponentially increase the number of aggregates. Adding one Boolean aggregate, for example, might double the possibilities.
 
@@ -122,10 +122,10 @@ When running in the Telemetry Analysis Environment, debugging can be a pain. The
 * `tail -f /mnt/spark.log` to view the Spark logs.
 * `yum install nethogs; sudo nethogs` to monitor network utilization for each process.
 
-To run the job, see `/vagrant/crash_rate_aggregates/fill_database.py --help`. The simplest possible usage is `python fill_database.py`.
+To run the job, see `/vagrant/crash_rate_aggregates/crash_aggregator.py --help`. The simplest possible usage is `python crash_aggregator.py`.
 
 Deployment
 ----------
 
 1. Install [Ansible Playbook](http://docs.ansible.com/ansible/playbooks.html): `sudo apt-get install ansible`.
-2. Set up the scheduled Spark analysis on the [Telemetry analysis service](https://analysis.telemetry.mozilla.org/cluster/schedule) to run daily, using the `run_fill_database.ipynb` Jupyter notebook.
+2. Set up the scheduled Spark analysis on the [Telemetry analysis service](https://analysis.telemetry.mozilla.org/cluster/schedule) to run daily, using the `run_crash_aggregator.ipynb` Jupyter notebook.
