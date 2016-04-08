@@ -72,7 +72,10 @@ def compare_crashes(spark_context, pings, comparable_dimensions, dimension_names
 
         # convert the YYYYMMDD format to a real date
         submission_date = get_property(ping, ("meta", "submissionDate"))
-        result["submission_date"] = datetime.strptime(submission_date, "%Y%m%d").date()
+        try:
+            result["submission_date"] = datetime.strptime(submission_date, "%Y%m%d").date()
+        except: # malformed date, which is very rare but does happen
+            result["submission_date"] = None
 
         activity_date = get_property(ping, ("creationDate",))
         try:
