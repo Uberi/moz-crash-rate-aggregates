@@ -49,8 +49,15 @@ assert len(COMPARABLE_DIMENSIONS) == len(DIMENSION_NAMES), \
 
 def compare_crashes(spark_context, pings, comparable_dimensions, dimension_names):
     """
-    Returns a PairRDD of crash aggregates, as well as the number of pings
-    ignored due to being invalid.
+    Compares crash counts and other statistics within `pings` by `comparable_dimensions`.
+
+    Returns:
+
+    * A PairRDD of crash aggregates
+    * The number of main pings processed, as a Spark Accumulator
+    * The number of main pings ignored, as a Spark Accumulator
+    * The number of crash pings processed, as a Spark Accumulator
+    * The number of crash pings ignored, as a Spark Accumulator
     """
     def get_property(value, path):
         for key in path:
@@ -87,7 +94,10 @@ def compare_crashes(spark_context, pings, comparable_dimensions, dimension_names
             result["activity_date"] = None
 
         # subsession lengths are None for crash pings, since we don't keep track of that for those
-        result["subsession_length"] = get_property(ping, ("payload", "info", "subsessionLength"))
+        subsession_length = get_property(ping, ("payload", "info", "subsessionLength"))
+        if isinstance(subsession_length, (int, long)) and subsession_length < 0:
+            subsession_length = None # negative values should be treated as invalid
+        result["subsession_length"] = subsession_length
 
         # this should always be valid as get_pings filters this for us
         result["doc_type"] = get_property(ping, ("meta", "docType"))
@@ -109,7 +119,10 @@ def compare_crashes(spark_context, pings, comparable_dimensions, dimension_names
         )
         return result
 
-    ignored_pings_accumulator = spark_context.accumulator(0)
+    processed_main_pings_accumulator = spark_context.accumulator(0)
+    ignored_main_pings_accumulator = spark_context.accumulator(0)
+    processed_crash_pings_accumulator = spark_context.accumulator(0)
+    ignored_crash_pings_accumulator = spark_context.accumulator(0)
 
     def is_valid(ping):  # sanity check to make sure the ping is actually usable for our purposes
         subsession_length = ping["subsession_length"]
@@ -120,8 +133,15 @@ def compare_crashes(spark_context, pings, comparable_dimensions, dimension_names
             isinstance(ping["build_id"], (str, unicode)) and
             re.match(r"^\d{14}$", ping["build_id"])  # only accept valid buildids
         ):
+            if ping["doc_type"] == "crash":
+                processed_crash_pings_accumulator.add(1)
+            else:
+                processed_main_pings_accumulator.add(1)
             return True
-        ignored_pings_accumulator.add(1)
+        if ping["doc_type"] == "crash":
+            ignored_crash_pings_accumulator.add(1)
+        else:
+            ignored_main_pings_accumulator.add(1)
         return False
 
     ping_properties = pings.map(get_properties).filter(is_valid)
@@ -175,17 +195,25 @@ def compare_crashes(spark_context, pings, comparable_dimensions, dimension_names
             "usage_hours_squared", "main_crashes_squared", "content_crashes_squared",
             "plugin_crashes_squared", "gmplugin_crashes_squared",
         ]
+        dimensions = {}
+        for key, dimension_value in zip(dimension_names, dimension_values):
+            if dimension_value is not None:  # only include the keys with non-null values
+                try:
+                    dimensions[key] = unicode(dimension_value).encode("ascii", errors="replace")
+                except:
+                    dimensions[key] = ""
         return (
-            activity_date.strftime("%Y-%m-%d"),
-            {
-                key: str(dimension_value).decode("ascii", errors="replace")
-                for key, dimension_value in zip(dimension_names, dimension_values)
-                if dimension_value is not None  # only include the keys with non-null values
-            },
+            activity_date.strftime("%Y-%m-%d"), dimensions,
             dict(zip(stats_names, map(float, stats_array))),  # map of keys to corresponding stats
         )
 
-    return crash_values.map(dimension_mapping), ignored_pings_accumulator
+    return (
+        crash_values.map(dimension_mapping),
+        processed_main_pings_accumulator,
+        ignored_main_pings_accumulator,
+        processed_crash_pings_accumulator,
+        ignored_crash_pings_accumulator,
+    )
 
 
 def retrieve_crash_data(sc, submission_date_range, comparable_dimensions, fraction):
@@ -245,7 +273,7 @@ def run_job(spark_context, sql_context, submission_date_range, use_test_data=Fal
                 COMPARABLE_DIMENSIONS, FRACTION
             )
 
-        result, ignored_count = compare_crashes(
+        result, main_processed_count, main_ignored_count, crash_processed_count, crash_ignored_count = compare_crashes(
             spark_context,
             pings,
             COMPARABLE_DIMENSIONS, DIMENSION_NAMES
@@ -268,7 +296,8 @@ def run_job(spark_context, sql_context, submission_date_range, use_test_data=Fal
 
     print("========================================")
     print("JOB COMPLETED SUCCESSFULLY")
-    print("{} pings ignored".format(ignored_count.value))
+    print("{} main pings processed, {} main pings ignored".format(main_processed_count.value, main_ignored_count.value))
+    print("{} crash pings processed, {} crash pings ignored".format(crash_processed_count.value, crash_ignored_count.value))
     print("========================================")
 
 if __name__ == "__main__":
