@@ -24,6 +24,7 @@ COMPARABLE_DIMENSIONS = [
     ("environment", "addons", "activeExperiment", "id"),
     ("environment", "addons", "activeExperiment", "branch"),
     ("environment", "settings", "e10sEnabled"),
+    ("environment", "settings", "e10sCohort"),
 ]
 
 # names of the comparable dimensions above, used as dimension names in the database
@@ -39,6 +40,7 @@ DIMENSION_NAMES = [
     "experiment_id",
     "experiment_branch",
     "e10s_enabled",
+    "e10s_cohort",
 ]
 
 assert len(COMPARABLE_DIMENSIONS) == len(DIMENSION_NAMES), \
