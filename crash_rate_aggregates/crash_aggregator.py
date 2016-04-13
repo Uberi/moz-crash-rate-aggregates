@@ -290,14 +290,14 @@ def run_job(spark_context, sql_context, submission_date_range, use_test_data=Fal
         )
         df.write.parquet(s3_result_url)
 
-        print("SUCCESSFULLY UPLOADED CRASH AGGREGATES FOR {} TO S3".format(current_date))
+        print("SUCCESSFULLY UPLOADED CRASH AGGREGATES FOR {} TO S3:".format(current_date))
+        print("{} main pings processed, {} main pings ignored".format(main_processed_count.value, main_ignored_count.value))
+        print("{} crash pings processed, {} crash pings ignored".format(crash_processed_count.value, crash_ignored_count.value))
 
         current_date += timedelta(days=1)
 
     print("========================================")
     print("JOB COMPLETED SUCCESSFULLY")
-    print("{} main pings processed, {} main pings ignored".format(main_processed_count.value, main_ignored_count.value))
-    print("{} crash pings processed, {} crash pings ignored".format(crash_processed_count.value, crash_ignored_count.value))
     print("========================================")
 
 if __name__ == "__main__":
