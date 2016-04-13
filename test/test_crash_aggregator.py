@@ -106,6 +106,10 @@ class TestStringMethods(unittest.TestCase):
                 dimensions["e10s_enabled"],
                 ["True", "False"]
             )
+            self.assertIn(
+                dimensions["e10s_cohort"],
+                dataset.ping_dimensions["e10s_cohort"]
+            )
 
     def test_crash_rates(self):
         for activity_date, dimensions, stats in self.crash_rate_aggregates:

@@ -16,6 +16,7 @@ ping_dimensions = {
     "os_version":        [u"6.1", u"3.1.12"],
     "architecture":      [u"x86", u"x86-64"],
     "e10s":              [True, False],
+    "e10s_cohort":       ["control", "test"],
     "country":           ["US", "UK"],
     "experiment_id":     [None, "displayport-tuning-nightly@experiments.mozilla.org"],
     "experiment_branch": ["control", "experiment"],
@@ -112,6 +113,7 @@ def generate_payload(dimensions):
         u"settings": {
             u"telemetryEnabled": True,
             u"e10sEnabled": dimensions["e10s"],
+            u"e10sCohort": dimensions["e10s_cohort"],
         },
         u"build": {
             u"version": dimensions["build_version"],
