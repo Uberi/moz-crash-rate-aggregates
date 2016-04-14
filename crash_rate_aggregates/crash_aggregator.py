@@ -284,7 +284,7 @@ def run_job(spark_context, sql_context, submission_date_range, use_test_data=Fal
 
         # upload the dataframe as Parquet to S3
         s3_result_url = (
-            "s3n://telemetry-test-bucket/crash_aggregates/v1/submission_date={}".format(
+            "s3n://telemetry-parquet/crash_aggregates/v1/submission_date={}".format(
                 current_date
             )
         )
