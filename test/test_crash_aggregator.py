@@ -26,12 +26,12 @@ COLUMN_DIMENSIONS = ["submission_date", "activity_date"]
 FOLDED_DIMENSIONS = ["doc_type"]
 
 
-class TestStringMethods(unittest.TestCase):
+class TestCrashAggregator(unittest.TestCase):
     def setUp(self):
         self.sc = pyspark.SparkContext(master="local[1]")
         self.raw_pings = self.sc.parallelize(list(dataset.generate_pings()))
 
-        result, self.ignored_count = compare_crashes(
+        result, self.main_processed_count, self.main_ignored_count, self.crash_processed_count, self.crash_ignored_count = compare_crashes(
             self.sc,
             self.raw_pings,
             COMPARABLE_DIMENSIONS, DIMENSION_NAMES
@@ -48,7 +48,10 @@ class TestStringMethods(unittest.TestCase):
             len(FOLDED_DIMENSIONS)
         )
         self.assertEqual(self.raw_pings.count(), expected_pings)
-        self.assertEqual(self.ignored_count.value, 0)
+        self.assertEqual(self.main_processed_count.value, expected_pings / 2)
+        self.assertEqual(self.crash_processed_count.value, expected_pings / 2)
+        self.assertEqual(self.main_ignored_count.value, 0)
+        self.assertEqual(self.crash_ignored_count.value, 0)
 
         # the doc_type dimension should be collapsed by compare_crashes
         self.assertEqual(len(self.crash_rate_aggregates), expected_pings / 2)
