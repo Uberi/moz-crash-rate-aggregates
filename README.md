@@ -91,7 +91,7 @@ WITH channel_rates AS (
      AND dimensions['build_id'] > '20160201000000' -- only in the date range that we care about
    GROUP BY dimensions['build_id'], dimensions['e10s_cohort']
 )
-SELECT parse_datetime(build_id, 'yyyyMMddHHmmss') as build_id, -- program build date
+SELECT cast(parse_datetime(build_id, 'yyyyMMddHHmmss') as date) as build_id, -- program build date
        usage_kilohours, -- thousands of usage hours
        e10s_cohort, -- e10s cohort
        main_crashes / usage_kilohours AS main_crash_rate -- crash rate being defined as crashes per thousand usage hours

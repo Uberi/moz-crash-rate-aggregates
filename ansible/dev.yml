@@ -17,10 +17,6 @@
         - wget
         - ca-certificates
 
-    - name: get the current release codename for adding apt repositories
-      shell: "lsb_release -cs"
-      register: codename
-
     # we have to use wget here instead of the built in Ansible get_url module
     # because Python versions before 2.7.9 don't support SNI, which is needed
     # to verify the download via HTTPS, while wget does

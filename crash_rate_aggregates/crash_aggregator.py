@@ -168,7 +168,7 @@ def compare_crashes(spark_context, pings, comparable_dimensions, dimension_names
 
             # the crash values
             [
-                1,  # number of pings represented by the aggregate
+                1 - main_crashes,  # number of main pings represented by the aggregate
                 usage_hours, main_crashes, content_crashes,
                 plugin_crashes, gecko_media_plugin_crashes,
 
