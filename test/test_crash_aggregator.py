@@ -116,7 +116,7 @@ class TestCrashAggregator(unittest.TestCase):
 
     def test_crash_rates(self):
         for activity_date, dimensions, stats in self.crash_rate_aggregates:
-            self.assertEqual(stats["ping_count"], 2)
+            self.assertEqual(stats["ping_count"], 1)
             self.assertEqual(stats["usage_hours"], 42 * 2 / 3600.0)
             self.assertEqual(stats["main_crashes"], 1)
             self.assertEqual(stats["content_crashes"], 42 * 2)
