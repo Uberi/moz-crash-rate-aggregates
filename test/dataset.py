@@ -72,6 +72,13 @@ def generate_payload(dimensions):
                 u'sum': SCALAR_VALUE,
                 u'values': {u'0': SCALAR_VALUE, u'1': 0}
             },
+            u"SUBPROCESS_SHUTDOWN_KILL": {
+                u'bucket_count': 3,
+                u'histogram_type': 4,
+                u'range': [1, 2],
+                u'sum': SCALAR_VALUE,
+                u'values': {u'0': SCALAR_VALUE, u'1': 0}
+            }
         },
         u"keyedHistograms": {
             u'SUBPROCESS_CRASHES_WITH_DUMP': {

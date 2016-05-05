@@ -107,6 +107,11 @@ def compare_crashes(spark_context, pings, comparable_dimensions, dimension_names
                 "payload", "keyedHistograms", "SUBPROCESS_CRASHES_WITH_DUMP", "content"
             ))
         )
+        result["subprocess_shutdown_kill"] = get_count_histogram_value(
+            get_property(ping, (
+                "payload", "histograms", "SUBPROCESS_SHUTDOWN_KILL"
+            ))
+        )
         result["subprocess_crash_plugin"] = get_count_histogram_value(
             get_property(ping, (
                 "payload", "keyedHistograms", "SUBPROCESS_CRASHES_WITH_DUMP", "plugin"
@@ -160,6 +165,7 @@ def compare_crashes(spark_context, pings, comparable_dimensions, dimension_names
 
         main_crashes = int(ping["doc_type"] == "crash")  # main process crash (is a crash ping)
         content_crashes = ping["subprocess_crash_content"] or 0
+        content_shutdown_crashes = ping["subprocess_shutdown_kill"] or 0
         plugin_crashes = ping["subprocess_crash_plugin"] or 0
         gecko_media_plugin_crashes = ping["subprocess_crash_gmplugin"] or 0
         return (
@@ -171,11 +177,13 @@ def compare_crashes(spark_context, pings, comparable_dimensions, dimension_names
                 1,  # number of pings represented by the aggregate
                 usage_hours, main_crashes, content_crashes,
                 plugin_crashes, gecko_media_plugin_crashes,
+                content_shutdown_crashes,
 
                 # squared versions in order to compute stddev
                 # (with $$\sigma = \sqrt{\frac{\sum X^2}{N} - \mu^2}$$)
                 usage_hours ** 2, main_crashes ** 2, content_crashes ** 2,
                 plugin_crashes ** 2, gecko_media_plugin_crashes ** 2,
+                content_shutdown_crashes ** 2,
             ]
         )
 
@@ -192,8 +200,10 @@ def compare_crashes(spark_context, pings, comparable_dimensions, dimension_names
             "ping_count",
             "usage_hours", "main_crashes", "content_crashes",
             "plugin_crashes", "gmplugin_crashes",
+            "content_shutdown_crashes",
             "usage_hours_squared", "main_crashes_squared", "content_crashes_squared",
             "plugin_crashes_squared", "gmplugin_crashes_squared",
+            "content_shutdown_crashes_squared",
         ]
         dimensions = {}
         for key, dimension_value in zip(dimension_names, dimension_values):
