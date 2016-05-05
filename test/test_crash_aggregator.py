@@ -122,11 +122,13 @@ class TestCrashAggregator(unittest.TestCase):
             self.assertEqual(stats["content_crashes"], 42 * 2)
             self.assertEqual(stats["plugin_crashes"], 42 * 2)
             self.assertEqual(stats["gmplugin_crashes"], 42 * 2)
+            self.assertEqual(stats["content_shutdown_crashes"], 42 * 2)
             self.assertEqual(stats["usage_hours_squared"], 0.00027222222222222226)
             self.assertEqual(stats["main_crashes_squared"], 1)
             self.assertEqual(stats["content_crashes_squared"], 3528)
             self.assertEqual(stats["plugin_crashes_squared"], 3528)
             self.assertEqual(stats["gmplugin_crashes_squared"], 3528)
+            self.assertEqual(stats["content_shutdown_crashes_squared"], 3528)
 
 if __name__ == '__main__':
     unittest.main()
